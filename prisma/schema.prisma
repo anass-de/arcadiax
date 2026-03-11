@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum ReleaseStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model User {
+  id             String        @id @default(cuid())
+  name           String?
+  username       String?       @unique
+  email          String?       @unique
+  emailVerified  DateTime?
+  passwordHash   String?
+  image          String?
+  bio            String?
+  role           Role          @default(USER)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  accounts       Account[]
+  sessions       Session[]
+  comments       Comment[]
+  releases       Release[]     @relation("ReleaseAuthor")
+  mediaItems     HomeMedia[]   @relation("MediaAuthor")
+  releaseLikes   ReleaseLike[]
+  downloads      Download[]
+
+  @@index([email])
+  @@index([username])
+  @@index([role])
+  @@map("users")
+}
+
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?  @db.Text
+  access_token      String?  @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?  @db.Text
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@unique([token])
+  @@map("verification_tokens")
+}
+
+model Release {
+  id            String        @id @default(cuid())
+  title         String
+  version       String
+  slug          String        @unique
+  description   String?
+  changelog     String?
+  fileUrl       String
+  imageUrl      String?
+  status        ReleaseStatus @default(PUBLISHED)
+  downloadCount Int           @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  authorId      String
+  author        User          @relation("ReleaseAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  comments      Comment[]
+  likes         ReleaseLike[]
+  downloads     Download[]
+
+  @@index([authorId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([version])
+  @@map("releases")
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  content   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  releaseId String
+  release   Release   @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  parentId  String?
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+
+  @@index([userId])
+  @@index([releaseId])
+  @@index([parentId])
+  @@index([createdAt])
+  @@map("comments")
+}
+
+model ReleaseLike {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userId    String
+  releaseId String
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  release   Release  @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, releaseId])
+  @@index([userId])
+  @@index([releaseId])
+  @@map("release_likes")
+}
+
+model HomeMedia {
+  id          String    @id @default(cuid())
+  type        MediaType
+  title       String?
+  description String?
+  url         String
+  sortOrder   Int       @default(0)
+  active      Boolean   @default(true)
+  authorId    String?
+  author      User?     @relation("MediaAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([type])
+  @@index([active])
+  @@index([sortOrder])
+  @@index([authorId])
+  @@map("home_media")
+}
+
+model Download {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  releaseId String
+  release   Release  @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  ip        String?
+
+  @@index([releaseId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("downloads")
+}

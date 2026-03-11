@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:16
+    container_name: arcadiax-db
+
+    environment:
+      POSTGRES_USER: arcadiax
+      POSTGRES_PASSWORD: arcadiax
+      POSTGRES_DB: arcadiax
+
+    ports:
+      - "5434:5432"
+
+    volumes:
+      - arcadiax_pgdata:/var/lib/postgresql/data
+
+volumes:
+  arcadiax_pgdata:
