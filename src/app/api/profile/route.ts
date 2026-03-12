@@ -1,75 +1,197 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import bcrypt from "bcryptjs";
 
-import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
-function normalizeOptional(value: FormDataEntryValue | null) {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
+type UpdateBody = {
+  username?: string;
+  email?: string;
+  password?: string;
+};
 
-export async function POST(req: NextRequest) {
+export async function GET() {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user?.id) {
-      return NextResponse.redirect(new URL("/login", req.url));
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: "Nicht eingeloggt." },
+        { status: 401 }
+      );
     }
 
-    const formData = await req.formData();
+    const user = await prisma.user.findUnique({
+      where: {
+        email: session.user.email,
+      },
+      select: {
+        username: true,
+        email: true,
+      },
+    });
 
-    const name = normalizeOptional(formData.get("name"));
-    const username = normalizeOptional(formData.get("username"));
-    const bio = normalizeOptional(formData.get("bio"));
-    const image = normalizeOptional(formData.get("image"));
-
-    if (username && !/^[a-zA-Z0-9_-]{3,30}$/.test(username)) {
+    if (!user) {
       return NextResponse.json(
-        {
-          error:
-            "Username muss 3-30 Zeichen lang sein und darf nur Buchstaben, Zahlen, _ oder - enthalten.",
-        },
+        { error: "Benutzer nicht gefunden." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      username: user.username ?? "",
+      email: user.email ?? "",
+    });
+  } catch (error) {
+    console.error("GET /api/profile error:", error);
+
+    return NextResponse.json(
+      { error: "Serverfehler beim Laden des Profils." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: "Nicht eingeloggt." },
+        { status: 401 }
+      );
+    }
+
+    const body = (await req.json()) as UpdateBody;
+
+    const username = body.username?.trim() ?? "";
+    const email = body.email?.trim().toLowerCase() ?? "";
+    const password = body.password?.trim() ?? "";
+
+    if (!username) {
+      return NextResponse.json(
+        { error: "Username ist erforderlich." },
         { status: 400 }
       );
     }
 
-    const existingUsername = username
-      ? await prisma.user.findFirst({
-          where: {
-            username,
-            NOT: {
-              id: session.user.id,
-            },
-          },
-          select: { id: true },
-        })
-      : null;
+    if (username.length < 3) {
+      return NextResponse.json(
+        { error: "Username muss mindestens 3 Zeichen lang sein." },
+        { status: 400 }
+      );
+    }
 
-    if (existingUsername) {
+    if (!email) {
+      return NextResponse.json(
+        { error: "E-Mail ist erforderlich." },
+        { status: 400 }
+      );
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { error: "Ungültige E-Mail-Adresse." },
+        { status: 400 }
+      );
+    }
+
+    if (password && password.length < 6) {
+      return NextResponse.json(
+        { error: "Passwort muss mindestens 6 Zeichen lang sein." },
+        { status: 400 }
+      );
+    }
+
+    const currentUser = await prisma.user.findUnique({
+      where: {
+        email: session.user.email,
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+      },
+    });
+
+    if (!currentUser) {
+      return NextResponse.json(
+        { error: "Benutzer nicht gefunden." },
+        { status: 404 }
+      );
+    }
+
+    const usernameTaken = await prisma.user.findFirst({
+      where: {
+        username,
+        NOT: {
+          id: currentUser.id,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (usernameTaken) {
       return NextResponse.json(
         { error: "Dieser Username ist bereits vergeben." },
         { status: 409 }
       );
     }
 
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: {
-        name,
-        username,
-        bio,
-        image,
+    const emailTaken = await prisma.user.findFirst({
+      where: {
+        email,
+        NOT: {
+          id: currentUser.id,
+        },
+      },
+      select: {
+        id: true,
       },
     });
 
-    return NextResponse.redirect(new URL("/profile", req.url));
+    if (emailTaken) {
+      return NextResponse.json(
+        { error: "Diese E-Mail ist bereits vergeben." },
+        { status: 409 }
+      );
+    }
+
+    const data: {
+      username: string;
+      email: string;
+      passwordHash?: string;
+    } = {
+      username,
+      email,
+    };
+
+    if (password) {
+      data.passwordHash = await bcrypt.hash(password, 12);
+    }
+
+    await prisma.user.update({
+      where: {
+        id: currentUser.id,
+      },
+      data,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      message: "Profil erfolgreich aktualisiert.",
+    });
   } catch (error) {
-    console.error("POST /api/profile error:", error);
+    console.error("PATCH /api/profile error:", error);
 
     return NextResponse.json(
-      { error: "Profil konnte nicht gespeichert werden." },
+      { error: "Serverfehler beim Speichern des Profils." },
       { status: 500 }
     );
   }

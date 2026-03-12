@@ -255,15 +255,13 @@ export default async function DashboardCommentsPage({
             >
               Suche
             </label>
-            <div className="relative">
-              <input
-                id="q"
-                name="q"
-                defaultValue={q}
-                placeholder="Nach Kommentarinhalt suchen..."
-                className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
-              />
-            </div>
+            <input
+              id="q"
+              name="q"
+              defaultValue={q}
+              placeholder="Nach Kommentarinhalt suchen..."
+              className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
+            />
           </div>
 
           <div>

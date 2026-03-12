@@ -4,23 +4,52 @@ import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { createClient } from "@supabase/supabase-js";
 import {
+  AlertCircle,
   ArrowLeft,
+  CheckCircle2,
   ExternalLink,
   FileText,
   ImageIcon,
-  Save,
   Shield,
   Upload,
 } from "lucide-react";
 
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
+import SubmitButton from "@/components/ui/SubmitButton";
 
 type PageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams?: Promise<{
+    error?: string;
+    success?: string;
+  }>;
 };
+
+type SessionUser = {
+  id?: string | null;
+  role?: string | null;
+  email?: string | null;
+  name?: string | null;
+};
+
+function getSessionUser(
+  session: Awaited<ReturnType<typeof getServerSession>>
+): SessionUser | null {
+  if (!session) {
+    return null;
+  }
+
+  const maybeSession = session as { user?: unknown };
+
+  if (!maybeSession.user || typeof maybeSession.user !== "object") {
+    return null;
+  }
+
+  return maybeSession.user as SessionUser;
+}
 
 function formatDateTime(date: Date) {
   return new Intl.DateTimeFormat("de-DE", {
@@ -46,6 +75,10 @@ function slugify(value: string) {
     .replace(/^-|-$/g, "");
 }
 
+function getStorageBucket() {
+  return process.env.SUPABASE_STORAGE_BUCKET || "arcadiax";
+}
+
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -64,13 +97,52 @@ function getSupabaseAdmin() {
   });
 }
 
+function extractStoragePathFromPublicUrl(publicUrl: string | null | undefined) {
+  if (!publicUrl) {
+    return null;
+  }
+
+  const bucket = getStorageBucket();
+
+  try {
+    const url = new URL(publicUrl);
+    const marker = `/storage/v1/object/public/${bucket}/`;
+    const index = url.pathname.indexOf(marker);
+
+    if (index === -1) {
+      return null;
+    }
+
+    return decodeURIComponent(url.pathname.slice(index + marker.length));
+  } catch {
+    return null;
+  }
+}
+
+async function removeFileFromStorage(publicUrl: string | null | undefined) {
+  const filePath = extractStoragePathFromPublicUrl(publicUrl);
+
+  if (!filePath) {
+    return;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const bucket = getStorageBucket();
+
+  const { error } = await supabase.storage.from(bucket).remove([filePath]);
+
+  if (error) {
+    console.error("Konnte alte Datei nicht löschen:", error.message);
+  }
+}
+
 async function uploadFileToStorage(args: {
   file: File;
   folder: string;
   fileNamePrefix: string;
 }) {
   const supabase = getSupabaseAdmin();
-  const bucket = process.env.SUPABASE_STORAGE_BUCKET || "arcadiax";
+  const bucket = getStorageBucket();
 
   const buffer = Buffer.from(await args.file.arrayBuffer());
   const safeOriginalName = args.file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
@@ -78,7 +150,7 @@ async function uploadFileToStorage(args: {
 
   const { error } = await supabase.storage.from(bucket).upload(filePath, buffer, {
     contentType: args.file.type || "application/octet-stream",
-    upsert: true,
+    upsert: false,
   });
 
   if (error) {
@@ -92,18 +164,90 @@ async function uploadFileToStorage(args: {
   return publicUrl;
 }
 
-export default async function EditReleasePage({ params }: PageProps) {
-  const session = await getServerSession(authOptions);
+function validateImageFile(file: File) {
+  const maxSize = 10 * 1024 * 1024;
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-  if (!session?.user) {
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error("Ungültiges Bildformat. Erlaubt sind JPG, PNG, WEBP und GIF.");
+  }
+
+  if (file.size > maxSize) {
+    throw new Error("Das Bild ist zu groß. Maximal erlaubt sind 10 MB.");
+  }
+}
+
+function validateReleaseFile(file: File) {
+  const maxSize = 500 * 1024 * 1024;
+
+  if (file.size > maxSize) {
+    throw new Error("Die Release-Datei ist zu groß. Maximal erlaubt sind 500 MB.");
+  }
+}
+
+async function createUniqueSlug(baseSlug: string, releaseId: string) {
+  let slug = baseSlug;
+  let counter = 2;
+
+  while (true) {
+    const existing = await prisma.release.findFirst({
+      where: {
+        slug,
+        NOT: {
+          id: releaseId,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
+      return slug;
+    }
+
+    slug = `${baseSlug}-${counter}`;
+    counter += 1;
+  }
+}
+
+function buildEditUrl(
+  releaseId: string,
+  params: Record<string, string | null | undefined>
+) {
+  const query = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      query.set(key, value);
+    }
+  }
+
+  const queryString = query.toString();
+  return queryString
+    ? `/dashboard/releases/${releaseId}/edit?${queryString}`
+    : `/dashboard/releases/${releaseId}/edit`;
+}
+
+export default async function EditReleasePage({
+  params,
+  searchParams,
+}: PageProps) {
+  const session = await getServerSession(authOptions);
+  const sessionUser = getSessionUser(session);
+
+  if (!sessionUser) {
     redirect("/login");
   }
 
-  if (session.user.role !== "ADMIN") {
+  if (sessionUser.role !== "ADMIN") {
     redirect("/");
   }
 
   const { id } = await params;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const errorMessage = resolvedSearchParams.error ?? null;
+  const successMessage = resolvedSearchParams.success ?? null;
 
   const release = await prisma.release.findUnique({
     where: { id },
@@ -115,13 +259,13 @@ export default async function EditReleasePage({ params }: PageProps) {
       description: true,
       fileUrl: true,
       imageUrl: true,
-      downloads: true,
       status: true,
       createdAt: true,
       updatedAt: true,
       _count: {
         select: {
           comments: true,
+          downloads: true,
         },
       },
     },
@@ -135,105 +279,155 @@ export default async function EditReleasePage({ params }: PageProps) {
     "use server";
 
     const session = await getServerSession(authOptions);
+    const sessionUser = getSessionUser(session);
 
-    if (!session?.user || session.user.role !== "ADMIN") {
+    if (!sessionUser || sessionUser.role !== "ADMIN") {
       redirect("/");
     }
 
     const releaseId = String(formData.get("releaseId") || "").trim();
 
     if (!releaseId) {
-      throw new Error("Ungültige Release-ID.");
+      redirect(buildEditUrl(id, { error: "Ungültige Release-ID." }));
     }
 
-    const title = String(formData.get("title") || "").trim();
-    const version = String(formData.get("version") || "").trim();
-    const status = String(formData.get("status") || "").trim().toUpperCase();
+    try {
+      const title = String(formData.get("title") || "").trim();
+      const version = String(formData.get("version") || "").trim();
+      const status = String(formData.get("status") || "")
+        .trim()
+        .toUpperCase();
 
-    const slugInput = normalizeOptional(formData.get("slug"));
-    const description = normalizeOptional(formData.get("description"));
+      const slugInput = normalizeOptional(formData.get("slug"));
+      const description = normalizeOptional(formData.get("description"));
 
-    const imageFile = formData.get("imageFile");
-    const releaseFile = formData.get("releaseFile");
+      const imageFile = formData.get("imageFile");
+      const releaseFile = formData.get("releaseFile");
 
-    if (!title) {
-      throw new Error("Titel darf nicht leer sein.");
-    }
+      if (!title) {
+        throw new Error("Titel darf nicht leer sein.");
+      }
 
-    if (!version) {
-      throw new Error("Version darf nicht leer sein.");
-    }
+      if (!version) {
+        throw new Error("Version darf nicht leer sein.");
+      }
 
-    if (status !== "DRAFT" && status !== "PUBLISHED") {
-      throw new Error("Ungültiger Status.");
-    }
+      if (status !== "DRAFT" && status !== "PUBLISHED") {
+        throw new Error("Ungültiger Status.");
+      }
 
-    const existing = await prisma.release.findUnique({
-      where: { id: releaseId },
-      select: {
-        id: true,
-        slug: true,
-        imageUrl: true,
-        fileUrl: true,
-      },
-    });
-
-    if (!existing) {
-      throw new Error("Release nicht gefunden.");
-    }
-
-    let nextImageUrl = existing.imageUrl;
-    let nextFileUrl = existing.fileUrl;
-
-    const safeSlug = slugInput ? slugify(slugInput) : null;
-    const releaseSlugOrId = safeSlug || existing.slug || releaseId;
-    const baseFolder = `releases/${releaseSlugOrId}`;
-
-    if (imageFile instanceof File && imageFile.size > 0) {
-      nextImageUrl = await uploadFileToStorage({
-        file: imageFile,
-        folder: `${baseFolder}/images`,
-        fileNamePrefix: "image",
+      const existing = await prisma.release.findUnique({
+        where: { id: releaseId },
+        select: {
+          id: true,
+          slug: true,
+          imageUrl: true,
+          fileUrl: true,
+        },
       });
-    }
 
-    if (releaseFile instanceof File && releaseFile.size > 0) {
-      nextFileUrl = await uploadFileToStorage({
-        file: releaseFile,
-        folder: `${baseFolder}/files`,
-        fileNamePrefix: "release",
+      if (!existing) {
+        throw new Error("Release nicht gefunden.");
+      }
+
+      let nextImageUrl = existing.imageUrl;
+      let nextFileUrl = existing.fileUrl;
+      let nextSlug = existing.slug;
+
+      if (slugInput !== null) {
+        const normalizedSlug = slugify(slugInput);
+
+        if (!normalizedSlug) {
+          throw new Error("Der Slug ist ungültig.");
+        }
+
+        nextSlug = await createUniqueSlug(normalizedSlug, releaseId);
+      }
+
+      const releaseSlugOrId = nextSlug || existing.slug || releaseId;
+      const baseFolder = `releases/${releaseSlugOrId}`;
+
+      if (imageFile instanceof File && imageFile.size > 0) {
+        validateImageFile(imageFile);
+
+        const uploadedImageUrl = await uploadFileToStorage({
+          file: imageFile,
+          folder: `${baseFolder}/images`,
+          fileNamePrefix: "image",
+        });
+
+        await removeFileFromStorage(existing.imageUrl);
+        nextImageUrl = uploadedImageUrl;
+      }
+
+      if (releaseFile instanceof File && releaseFile.size > 0) {
+        validateReleaseFile(releaseFile);
+
+        const uploadedFileUrl = await uploadFileToStorage({
+          file: releaseFile,
+          folder: `${baseFolder}/files`,
+          fileNamePrefix: "release",
+        });
+
+        await removeFileFromStorage(existing.fileUrl);
+        nextFileUrl = uploadedFileUrl;
+      }
+
+      if (!nextFileUrl) {
+        throw new Error(
+          "Es muss mindestens eine Release-Datei vorhanden sein. Bitte wähle eine Datei vom Computer aus."
+        );
+      }
+
+      await prisma.release.update({
+        where: {
+          id: releaseId,
+        },
+        data: {
+          title,
+          version,
+          status: status as "DRAFT" | "PUBLISHED",
+          slug: nextSlug,
+          description,
+          imageUrl: nextImageUrl,
+          fileUrl: nextFileUrl,
+        },
       });
-    }
 
-    if (!nextFileUrl) {
-      throw new Error(
-        "Es muss mindestens eine Release-Datei vorhanden sein. Bitte wähle eine Datei vom Computer aus."
+      revalidatePath("/");
+      revalidatePath("/dashboard");
+      revalidatePath("/dashboard/releases");
+      revalidatePath(`/dashboard/releases/${releaseId}`);
+      revalidatePath(`/dashboard/releases/${releaseId}/edit`);
+      revalidatePath("/releases");
+      revalidatePath(
+        existing.slug
+          ? `/releases/${existing.slug}`
+          : `/releases/${releaseId}`
+      );
+      revalidatePath(
+        nextSlug ? `/releases/${nextSlug}` : `/releases/${releaseId}`
+      );
+    } catch (error) {
+      console.error("Fehler beim Aktualisieren des Releases:", error);
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Beim Speichern ist ein unbekannter Fehler aufgetreten.";
+
+      redirect(
+        buildEditUrl(releaseId, {
+          error: message,
+        })
       );
     }
 
-    await prisma.release.update({
-      where: {
-        id: releaseId,
-      },
-      data: {
-        title,
-        version,
-        status: status as "DRAFT" | "PUBLISHED",
-        slug: safeSlug,
-        description,
-        imageUrl: nextImageUrl,
-        fileUrl: nextFileUrl,
-      },
-    });
-
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/releases");
-    revalidatePath(`/dashboard/releases/${releaseId}/edit`);
-    revalidatePath("/releases");
-    revalidatePath(existing.slug ? `/releases/${existing.slug}` : `/releases/${releaseId}`);
-    revalidatePath(safeSlug ? `/releases/${safeSlug}` : `/releases/${releaseId}`);
-
-    redirect("/dashboard/releases");
+    redirect(
+      buildEditUrl(releaseId, {
+        success: "Änderungen wurden erfolgreich gespeichert.",
+      })
+    );
   }
 
   const publicHref = release.slug?.trim()
@@ -281,6 +475,28 @@ export default async function EditReleasePage({ params }: PageProps) {
         </div>
       </section>
 
+      {errorMessage ? (
+        <div className="flex items-start gap-3 rounded-[24px] border border-red-500/20 bg-red-500/10 p-4 text-red-100">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-300" />
+          <div>
+            <div className="font-semibold">Speichern fehlgeschlagen</div>
+            <p className="mt-1 text-sm text-red-100/90">{errorMessage}</p>
+          </div>
+        </div>
+      ) : null}
+
+      {successMessage ? (
+        <div className="flex items-start gap-3 rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-100">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+          <div>
+            <div className="font-semibold">Erfolgreich gespeichert</div>
+            <p className="mt-1 text-sm text-emerald-100/90">
+              {successMessage}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
           <div className="text-xs uppercase tracking-[0.16em] text-white/40">
@@ -299,7 +515,7 @@ export default async function EditReleasePage({ params }: PageProps) {
             Downloads
           </div>
           <div className="mt-2 text-2xl font-semibold text-white">
-            {release.downloads}
+            {release._count.downloads}
           </div>
           <div className="mt-2 text-sm text-white/50">
             Gesamtzahl der Downloads
@@ -455,11 +671,12 @@ export default async function EditReleasePage({ params }: PageProps) {
                   id="imageFile"
                   name="imageFile"
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
                   className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white file:mr-4 file:rounded-xl file:border-0 file:bg-blue-500/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
                 />
                 <p className="mt-2 text-xs text-white/40">
-                  Optional. Wenn du nichts auswählst, bleibt das aktuelle Bild erhalten.
+                  Optional. Wenn du nichts auswählst, bleibt das aktuelle Bild
+                  erhalten.
                 </p>
               </div>
 
@@ -477,19 +694,14 @@ export default async function EditReleasePage({ params }: PageProps) {
                   className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white file:mr-4 file:rounded-xl file:border-0 file:bg-blue-500/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
                 />
                 <p className="mt-2 text-xs text-white/40">
-                  Optional. Wenn du nichts auswählst, bleibt die aktuelle Release-Datei erhalten.
+                  Optional. Wenn du nichts auswählst, bleibt die aktuelle
+                  Release-Datei erhalten.
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
-              <button
-                type="submit"
-                className="inline-flex items-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/12 px-5 py-3 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18"
-              >
-                <Save className="h-4 w-4 text-blue-300" />
-                <span>Änderungen speichern</span>
-              </button>
+              <SubmitButton />
 
               <Link
                 href="/dashboard/releases"
@@ -509,7 +721,9 @@ export default async function EditReleasePage({ params }: PageProps) {
                 <ImageIcon className="h-5 w-5 text-blue-300" />
               </div>
               <div>
-                <div className="text-sm font-medium text-white/50">Vorschau</div>
+                <div className="text-sm font-medium text-white/50">
+                  Vorschau
+                </div>
                 <h2 className="text-2xl font-semibold text-white">
                   Aktuelles Bild & Datei
                 </h2>
@@ -531,7 +745,9 @@ export default async function EditReleasePage({ params }: PageProps) {
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                         <ImageIcon className="h-8 w-8 text-blue-300/80" />
                       </div>
-                      <span className="text-sm">Kein Vorschaubild vorhanden</span>
+                      <span className="text-sm">
+                        Kein Vorschaubild vorhanden
+                      </span>
                     </div>
                   )}
                 </div>
@@ -542,7 +758,9 @@ export default async function EditReleasePage({ params }: PageProps) {
                       Aktuelles Bild
                     </div>
                     <div className="mt-2 text-sm text-white/70">
-                      {release.imageUrl ? "Bild vorhanden" : "Kein Bild gespeichert"}
+                      {release.imageUrl
+                        ? "Bild vorhanden"
+                        : "Kein Bild gespeichert"}
                     </div>
                   </div>
 
@@ -551,7 +769,9 @@ export default async function EditReleasePage({ params }: PageProps) {
                       Aktuelle Datei
                     </div>
                     <div className="mt-2 text-sm text-white/70">
-                      {release.fileUrl ? "Datei vorhanden" : "Keine Datei gespeichert"}
+                      {release.fileUrl
+                        ? "Datei vorhanden"
+                        : "Keine Datei gespeichert"}
                     </div>
                   </div>
 

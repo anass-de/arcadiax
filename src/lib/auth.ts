@@ -6,6 +6,9 @@ import bcrypt from "bcryptjs";
 
 import { prisma } from "@/lib/prisma";
 
+/*
+  Username aus Email generieren
+*/
 function buildUsernameFromEmail(email: string) {
   const localPart = email.split("@")[0] || "user";
 
@@ -20,27 +23,30 @@ function buildUsernameFromEmail(email: string) {
   );
 }
 
+/*
+  garantiert eindeutigen Username
+*/
 async function getUniqueUsername(base: string) {
   const safeBase = base.slice(0, 20) || "user";
 
-  const exact = await prisma.user.findUnique({
+  const existing = await prisma.user.findUnique({
     where: { username: safeBase },
     select: { id: true },
   });
 
-  if (!exact) {
+  if (!existing) {
     return safeBase;
   }
 
   for (let i = 1; i <= 9999; i++) {
     const candidate = `${safeBase}-${i}`.slice(0, 20);
 
-    const existing = await prisma.user.findUnique({
+    const found = await prisma.user.findUnique({
       where: { username: candidate },
       select: { id: true },
     });
 
-    if (!existing) {
+    if (!found) {
       return candidate;
     }
   }
@@ -62,6 +68,9 @@ export const authOptions: NextAuthOptions = {
   debug: false,
 
   providers: [
+    /*
+      Google OAuth
+    */
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
       ? [
           GoogleProvider({
@@ -71,8 +80,12 @@ export const authOptions: NextAuthOptions = {
         ]
       : []),
 
+    /*
+      Username / Email Login
+    */
     CredentialsProvider({
       name: "Credentials",
+
       credentials: {
         identifier: {
           label: "Username oder Email",
@@ -85,20 +98,21 @@ export const authOptions: NextAuthOptions = {
       },
 
       async authorize(credentials) {
-        const rawIdentifier = String(credentials?.identifier ?? "").trim();
-        const emailIdentifier = rawIdentifier.toLowerCase();
-        const usernameIdentifier = rawIdentifier.toLowerCase();
+        const identifier = String(credentials?.identifier ?? "")
+          .trim()
+          .toLowerCase();
+
         const password = String(credentials?.password ?? "");
 
-        if (!rawIdentifier || !password) {
+        if (!identifier || !password) {
           return null;
         }
 
         const user = await prisma.user.findFirst({
           where: {
             OR: [
-              { email: emailIdentifier },
-              { username: usernameIdentifier },
+              { email: identifier },
+              { username: identifier },
             ],
           },
           select: {
@@ -112,13 +126,13 @@ export const authOptions: NextAuthOptions = {
           },
         });
 
-        if (!user?.passwordHash) {
+        if (!user || !user.passwordHash) {
           return null;
         }
 
-        const isValid = await bcrypt.compare(password, user.passwordHash);
+        const valid = await bcrypt.compare(password, user.passwordHash);
 
-        if (!isValid) {
+        if (!valid) {
           return null;
         }
 
@@ -134,8 +148,13 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
+
+    /*
+      Google Login Handling
+    */
     async signIn({ user, account }) {
       if (account?.provider === "google" && user.email) {
+
         const email = user.email.trim().toLowerCase();
         const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
 
@@ -157,13 +176,19 @@ export const authOptions: NextAuthOptions = {
             username?: string;
           } = {};
 
+          /*
+            Admin automatisch setzen
+          */
           if (dbUser.role !== desiredRole) {
             updateData.role = desiredRole;
           }
 
+          /*
+            Username automatisch generieren
+          */
           if (!dbUser.username) {
-            const baseUsername = buildUsernameFromEmail(email);
-            updateData.username = await getUniqueUsername(baseUsername);
+            const base = buildUsernameFromEmail(email);
+            updateData.username = await getUniqueUsername(base);
           }
 
           if (Object.keys(updateData).length > 0) {
@@ -181,14 +206,22 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
 
+    /*
+      JWT erzeugen
+    */
     async jwt({ token, user }) {
+
       if (user) {
         token.sub = (user as any).id ?? token.sub;
         (token as any).role =
           (user as any).role ?? (token as any).role ?? "USER";
       }
 
+      /*
+        Rolle nachladen falls JWT neu ist
+      */
       if (!(token as any).role && token.email) {
+
         const dbUser = await prisma.user.findUnique({
           where: { email: token.email.toLowerCase() },
           select: {
@@ -206,7 +239,11 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
 
+    /*
+      Session erzeugen
+    */
     async session({ session, token }) {
+
       if (session.user) {
         (session.user as any).id = token.sub ?? "";
         (session.user as any).role = (token as any).role ?? "USER";

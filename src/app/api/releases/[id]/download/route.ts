@@ -1,8 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
+
+export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
@@ -12,9 +14,28 @@ type RouteContext = {
 
 type SessionUser = {
   id?: string | null;
+  role?: string | null;
+  email?: string | null;
+  name?: string | null;
 };
 
-function getClientIp(request: Request) {
+function getSessionUser(
+  session: Awaited<ReturnType<typeof getServerSession>>
+): SessionUser | null {
+  if (!session) {
+    return null;
+  }
+
+  const maybeSession = session as { user?: unknown };
+
+  if (!maybeSession.user || typeof maybeSession.user !== "object") {
+    return null;
+  }
+
+  return maybeSession.user as SessionUser;
+}
+
+function getClientIp(request: NextRequest) {
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
     return forwardedFor.split(",")[0]?.trim() || null;
@@ -28,13 +49,25 @@ function getClientIp(request: Request) {
   return null;
 }
 
-function getSessionUserId(
-  session: Awaited<ReturnType<typeof getServerSession>>
-) {
-  return (session?.user as SessionUser | undefined)?.id ?? null;
+function buildRedirectUrl(fileUrl: string, request: NextRequest) {
+  const trimmed = fileUrl.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith("/")) {
+    return new URL(trimmed, request.url).toString();
+  }
+
+  return new URL(`/${trimmed}`, request.url).toString();
 }
 
-export async function GET(request: Request, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
 
@@ -71,7 +104,7 @@ export async function GET(request: Request, context: RouteContext) {
     }
 
     const session = await getServerSession(authOptions);
-    const userId = getSessionUserId(session);
+    const user = getSessionUser(session);
     const ip = getClientIp(request);
 
     await prisma.$transaction([
@@ -88,13 +121,22 @@ export async function GET(request: Request, context: RouteContext) {
       prisma.download.create({
         data: {
           releaseId: release.id,
-          userId,
+          userId: user?.id ?? null,
           ip,
         },
       }),
     ]);
 
-    return NextResponse.redirect(release.fileUrl, {
+    const redirectUrl = buildRedirectUrl(release.fileUrl, request);
+
+    if (!redirectUrl) {
+      return NextResponse.json(
+        { error: "Ungültige Download-URL." },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.redirect(redirectUrl, {
       status: 307,
     });
   } catch (error) {

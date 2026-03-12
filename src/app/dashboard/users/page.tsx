@@ -1,14 +1,86 @@
-// src/app/dashboard/users/page.tsx
-
-import Link from "next/link";
-import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+import { getServerSession } from "next-auth";
+import {
+  Crown,
+  ImageIcon,
+  MessageSquare,
+  Package,
+  Search,
+  Shield,
+  User as UserIcon,
+  Users,
+} from "lucide-react";
 
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { authOptions } from "@/lib/auth";
+import UsersList from "@/components/dashboard/users/users-list";
 
-async function requireAdmin() {
+export const dynamic = "force-dynamic";
+
+type SearchParams = Promise<{
+  q?: string;
+  role?: string;
+  status?: string;
+  error?: string;
+}>;
+
+type PageProps = {
+  searchParams: SearchParams;
+};
+
+function formatDate(date: Date) {
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function getDisplayName(user: {
+  username?: string | null;
+  name?: string | null;
+  email?: string | null;
+}) {
+  return user.username || user.name || user.email || "Unbekannt";
+}
+
+function getStatusMessage(status?: string) {
+  switch (status) {
+    case "role_updated":
+      return "Benutzerrolle wurde erfolgreich aktualisiert.";
+    case "deleted":
+      return "Benutzer wurde erfolgreich gelöscht.";
+    default:
+      return null;
+  }
+}
+
+function getErrorMessage(error?: string) {
+  switch (error) {
+    case "invalid_method":
+      return "Ungültige Aktion.";
+    case "invalid_user":
+      return "Ungültiger Benutzer.";
+    case "invalid_role":
+      return "Ungültige Rolle.";
+    case "not_found":
+      return "Benutzer wurde nicht gefunden.";
+    case "delete_failed":
+      return "Benutzer konnte nicht gelöscht werden.";
+    case "role_update_failed":
+      return "Rolle konnte nicht aktualisiert werden.";
+    case "cannot_delete_self":
+      return "Du kannst deinen eigenen Account nicht löschen.";
+    case "cannot_change_own_role":
+      return "Du kannst deine eigene Rolle hier nicht ändern.";
+    default:
+      return null;
+  }
+}
+
+export default async function DashboardUsersPage({
+  searchParams,
+}: PageProps) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
@@ -19,265 +91,244 @@ async function requireAdmin() {
     redirect("/");
   }
 
-  return session;
-}
+  const params = await searchParams;
+  const q = params.q?.trim() || "";
+  const roleFilter = params.role?.trim() || "all";
 
-export default async function DashboardUsersPage() {
-  const session = await requireAdmin();
-  const currentUserId = session.user.id;
+  const where: {
+    OR?: Array<{
+      username?: { contains: string; mode: "insensitive" };
+      name?: { contains: string; mode: "insensitive" };
+      email?: { contains: string; mode: "insensitive" };
+    }>;
+    role?: "ADMIN" | "USER";
+  } = {};
 
-  async function updateUserRoleAction(formData: FormData) {
-    "use server";
-
-    const session = await requireAdmin();
-    const currentUserId = session.user.id;
-
-    const id = String(formData.get("id") ?? "").trim();
-    const role = String(formData.get("role") ?? "").trim().toUpperCase();
-
-    if (!id) return;
-    if (role !== "USER" && role !== "ADMIN") return;
-
-    if (id === currentUserId) {
-      revalidatePath("/dashboard/users");
-      return;
-    }
-
-    const existing = await prisma.user.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-
-    if (!existing) {
-      revalidatePath("/dashboard/users");
-      return;
-    }
-
-    await prisma.user.update({
-      where: { id },
-      data: {
-        role: role as "USER" | "ADMIN",
-      },
-    });
-
-    revalidatePath("/dashboard/users");
+  if (q) {
+    where.OR = [
+      { username: { contains: q, mode: "insensitive" } },
+      { name: { contains: q, mode: "insensitive" } },
+      { email: { contains: q, mode: "insensitive" } },
+    ];
   }
 
-  async function deleteUserAction(formData: FormData) {
-    "use server";
-
-    const session = await requireAdmin();
-    const currentUserId = session.user.id;
-
-    const id = String(formData.get("id") ?? "").trim();
-
-    if (!id) return;
-
-    if (id === currentUserId) {
-      revalidatePath("/dashboard/users");
-      return;
-    }
-
-    const existing = await prisma.user.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-
-    if (!existing) {
-      revalidatePath("/dashboard/users");
-      return;
-    }
-
-    await prisma.user.delete({
-      where: { id },
-    });
-
-    revalidatePath("/dashboard/users");
-    revalidatePath("/dashboard/comments");
+  if (roleFilter === "ADMIN" || roleFilter === "USER") {
+    where.role = roleFilter;
   }
 
-  const users = await prisma.user.findMany({
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      username: true,
-      email: true,
-      role: true,
-      image: true,
-      createdAt: true,
-      _count: {
-        select: {
-          comments: true,
-          releases: true,
-          mediaItems: true,
+  const [users, totalUsers, totalAdmins, totalNormalUsers] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }],
+      include: {
+        _count: {
+          select: {
+            comments: true,
+            releases: true,
+            mediaItems: true,
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.user.count(),
+    prisma.user.count({
+      where: { role: "ADMIN" },
+    }),
+    prisma.user.count({
+      where: { role: "USER" },
+    }),
+  ]);
 
-  const adminCount = users.filter((u) => u.role === "ADMIN").length;
-  const userCount = users.filter((u) => u.role === "USER").length;
+  const statusMessage = getStatusMessage(params.status);
+  const errorMessage = getErrorMessage(params.error);
+
+  const preparedUsers = users.map((user) => ({
+    id: user.id,
+    role: user.role,
+    username: user.username,
+    name: user.name,
+    email: user.email,
+    createdAtLabel: formatDate(user.createdAt),
+    displayName: getDisplayName(user),
+    commentCount: user._count.comments,
+    releaseCount: user._count.releases,
+    mediaCount: user._count.mediaItems,
+    isSelf: session.user.id === user.id,
+  }));
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-10">
-      <div className="mb-10">
-        <h1 className="text-3xl font-bold text-white">Benutzer verwalten</h1>
-        <p className="mt-2 text-zinc-400">
-          Benutzerrollen anpassen, Aktivität ansehen und problematische Accounts
-          entfernen.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-xs font-medium uppercase tracking-[0.24em] text-blue-200">
+              <Shield className="h-4 w-4" />
+              Benutzerverwaltung
+            </div>
 
-      <section className="mb-8 grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-          <p className="text-sm text-zinc-400">Gesamt</p>
-          <p className="mt-2 text-3xl font-bold text-white">{users.length}</p>
-        </div>
-
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-          <p className="text-sm text-zinc-400">Admins</p>
-          <p className="mt-2 text-3xl font-bold text-white">{adminCount}</p>
-        </div>
-
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-          <p className="text-sm text-zinc-400">User</p>
-          <p className="mt-2 text-3xl font-bold text-white">{userCount}</p>
+            <div>
+              <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                Benutzer verwalten
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/60 sm:text-base">
+                Benutzerrollen anpassen, Aktivität ansehen und problematische
+                Accounts im passenden ArcadiaX Stil verwalten.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section>
-        {users.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-400">
+      {statusMessage ? (
+        <div className="rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 px-5 py-4 text-sm text-emerald-200">
+          {statusMessage}
+        </div>
+      ) : null}
+
+      {errorMessage ? (
+        <div className="rounded-[24px] border border-red-500/20 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+          {errorMessage}
+        </div>
+      ) : null}
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
+              <Users className="h-5 w-5 text-blue-300" />
+            </div>
+            <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+              Gesamt
+            </div>
+          </div>
+          <div className="mt-4 text-3xl font-semibold text-white">
+            {totalUsers}
+          </div>
+          <div className="mt-2 text-sm text-white/50">Alle Benutzerkonten</div>
+        </div>
+
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
+              <Crown className="h-5 w-5 text-blue-300" />
+            </div>
+            <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+              Admins
+            </div>
+          </div>
+          <div className="mt-4 text-3xl font-semibold text-white">
+            {totalAdmins}
+          </div>
+          <div className="mt-2 text-sm text-white/50">Administratoren</div>
+        </div>
+
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
+              <UserIcon className="h-5 w-5 text-blue-300" />
+            </div>
+            <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+              User
+            </div>
+          </div>
+          <div className="mt-4 text-3xl font-semibold text-white">
+            {totalNormalUsers}
+          </div>
+          <div className="mt-2 text-sm text-white/50">Normale Benutzer</div>
+        </div>
+      </section>
+
+      <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
+            <Search className="h-5 w-5 text-blue-300" />
+          </div>
+          <div>
+            <div className="text-sm font-medium text-white/50">Filter</div>
+            <h2 className="text-2xl font-semibold text-white">
+              Suche und Auswahl
+            </h2>
+          </div>
+        </div>
+
+        <form className="grid gap-4 lg:grid-cols-[1.2fr_0.6fr_auto] lg:items-end">
+          <div>
+            <label
+              htmlFor="q"
+              className="mb-2 block text-sm font-medium text-white/70"
+            >
+              Suche
+            </label>
+            <input
+              id="q"
+              name="q"
+              defaultValue={q}
+              placeholder="Nach Username, Name oder E-Mail suchen..."
+              className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="role"
+              className="mb-2 block text-sm font-medium text-white/70"
+            >
+              Rolle
+            </label>
+            <select
+              id="role"
+              name="role"
+              defaultValue={roleFilter}
+              className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/30"
+            >
+              <option value="all">Alle</option>
+              <option value="ADMIN">ADMIN</option>
+              <option value="USER">USER</option>
+            </select>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/12 px-5 py-3 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18"
+            >
+              Anwenden
+            </button>
+
+            <a
+              href="/dashboard/users"
+              className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+            >
+              Reset
+            </a>
+          </div>
+        </form>
+      </section>
+
+      <section className="space-y-6">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <div className="text-sm uppercase tracking-[0.22em] text-white/40">
+              Accounts
+            </div>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
+              Benutzerliste
+            </h2>
+          </div>
+
+          <div className="hidden rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-white/55 md:block">
+            {preparedUsers.length} Treffer
+          </div>
+        </div>
+
+        {preparedUsers.length === 0 ? (
+          <div className="rounded-[30px] border border-white/10 bg-white/[0.03] p-8 text-white/55">
             Keine Benutzer gefunden.
           </div>
         ) : (
-          <div className="space-y-5">
-            {users.map((user) => {
-              const displayName =
-                user.username || user.name || user.email || "Unbekannt";
-              const isCurrentUser = user.id === currentUserId;
-
-              return (
-                <div
-                  key={user.id}
-                  className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6"
-                >
-                  <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-3 flex flex-wrap items-center gap-2">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${
-                            user.role === "ADMIN"
-                              ? "bg-blue-500/15 text-blue-300"
-                              : "bg-zinc-800 text-zinc-300"
-                          }`}
-                        >
-                          {user.role}
-                        </span>
-
-                        {isCurrentUser && (
-                          <span className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-medium text-green-300">
-                            Du
-                          </span>
-                        )}
-
-                        <span className="rounded-full bg-zinc-800 px-3 py-1 text-xs font-medium text-zinc-300">
-                          {new Date(user.createdAt).toLocaleDateString("de-DE")}
-                        </span>
-                      </div>
-
-                      <h2 className="text-xl font-semibold text-white">
-                        {displayName}
-                      </h2>
-
-                      <div className="mt-2 space-y-1 text-sm text-zinc-400">
-                        <p>
-                          <span className="text-zinc-500">E-Mail:</span>{" "}
-                          {user.email || "—"}
-                        </p>
-                        <p>
-                          <span className="text-zinc-500">Username:</span>{" "}
-                          {user.username || "—"}
-                        </p>
-                        <p>
-                          <span className="text-zinc-500">Kommentare:</span>{" "}
-                          {user._count.comments}
-                        </p>
-                        <p>
-                          <span className="text-zinc-500">Releases:</span>{" "}
-                          {user._count.releases}
-                        </p>
-                        <p>
-                          <span className="text-zinc-500">Medien:</span>{" "}
-                          {user._count.mediaItems}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="w-full max-w-sm space-y-4">
-                      <form action={updateUserRoleAction} className="space-y-3">
-                        <input type="hidden" name="id" value={user.id} />
-
-                        <label className="block text-sm font-medium text-zinc-300">
-                          Rolle ändern
-                        </label>
-
-                        <div className="flex gap-3">
-                          <select
-                            name="role"
-                            defaultValue={user.role}
-                            disabled={isCurrentUser}
-                            className="flex-1 rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <option value="USER">USER</option>
-                            <option value="ADMIN">ADMIN</option>
-                          </select>
-
-                          <button
-                            type="submit"
-                            disabled={isCurrentUser}
-                            className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Speichern
-                          </button>
-                        </div>
-                      </form>
-
-                      <div className="flex flex-wrap gap-3">
-                        <Link
-                          href="/dashboard/comments"
-                          className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800 hover:text-white"
-                        >
-                          Kommentare
-                        </Link>
-
-                        <form action={deleteUserAction}>
-                          <input type="hidden" name="id" value={user.id} />
-                          <button
-                            type="submit"
-                            disabled={isCurrentUser}
-                            className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Löschen
-                          </button>
-                        </form>
-                      </div>
-
-                      {isCurrentUser && (
-                        <p className="text-xs text-zinc-500">
-                          Der aktuell eingeloggte Admin kann hier nicht gelöscht
-                          oder herabgestuft werden.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <UsersList users={preparedUsers} />
         )}
       </section>
-    </main>
+    </div>
   );
 }

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
-import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+
+export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
@@ -13,109 +15,80 @@ type RouteContext = {
 type SessionUser = {
   id?: string | null;
   role?: string | null;
+  email?: string | null;
+  name?: string | null;
 };
 
 function getSessionUser(
   session: Awaited<ReturnType<typeof getServerSession>>
-): SessionUser {
-  return (session?.user as SessionUser | undefined) ?? {};
+): SessionUser | null {
+  if (!session) return null;
+
+  const maybeSession = session as { user?: unknown };
+
+  if (!maybeSession.user || typeof maybeSession.user !== "object") {
+    return null;
+  }
+
+  return maybeSession.user as SessionUser;
 }
 
 export async function PATCH(req: NextRequest, context: RouteContext) {
   try {
     const session = await getServerSession(authOptions);
-    const { id: userId, role } = getSessionUser(session);
-    const isAdmin = role === "ADMIN";
+    const user = getSessionUser(session);
 
-    if (!userId) {
+    if (!user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await context.params;
 
-    if (!id?.trim()) {
-      return NextResponse.json(
-        { error: "Ungültige Kommentar-ID." },
-        { status: 400 }
-      );
-    }
-
     const body = await req.json().catch(() => null);
-    const content =
-      typeof body?.content === "string" ? body.content.trim() : "";
+    const content = String(body?.content ?? "").trim();
 
     if (!content) {
       return NextResponse.json(
-        { error: "Kommentar darf nicht leer sein." },
+        { error: "Kommentarinhalt fehlt." },
         { status: 400 }
       );
     }
 
-    if (content.length > 2000) {
-      return NextResponse.json(
-        { error: "Kommentar ist zu lang. Maximal 2000 Zeichen." },
-        { status: 400 }
-      );
-    }
-
-    const existing = await prisma.comment.findUnique({
+    const existingComment = await prisma.comment.findUnique({
       where: { id },
       select: {
         id: true,
         userId: true,
-        parentId: true,
-        releaseId: true,
       },
     });
 
-    if (!existing) {
+    if (!existingComment) {
       return NextResponse.json(
         { error: "Kommentar nicht gefunden." },
         { status: 404 }
       );
     }
 
-    const isOwner = existing.userId === userId;
-
-    if (!isOwner && !isAdmin) {
+    if (existingComment.userId !== user.id && user.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const updatedComment = await prisma.comment.update({
+    const updated = await prisma.comment.update({
       where: { id },
       data: {
         content,
       },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            email: true,
-            image: true,
-          },
-        },
-        replies: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                username: true,
-                email: true,
-                image: true,
-              },
-            },
-          },
-          orderBy: {
-            createdAt: "asc",
-          },
-        },
+      select: {
+        id: true,
+        content: true,
+        updatedAt: true,
       },
     });
 
-    return NextResponse.json({ comment: updatedComment });
+    return NextResponse.json({
+      message: "Kommentar aktualisiert.",
+      comment: updated,
+    });
   } catch (error) {
     console.error("PATCH /api/comments/[id] error:", error);
 
@@ -129,59 +102,40 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
 export async function DELETE(_req: NextRequest, context: RouteContext) {
   try {
     const session = await getServerSession(authOptions);
-    const { id: userId, role } = getSessionUser(session);
-    const isAdmin = role === "ADMIN";
+    const user = getSessionUser(session);
 
-    if (!userId) {
+    if (!user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await context.params;
 
-    if (!id?.trim()) {
-      return NextResponse.json(
-        { error: "Ungültige Kommentar-ID." },
-        { status: 400 }
-      );
-    }
-
-    const existing = await prisma.comment.findUnique({
+    const existingComment = await prisma.comment.findUnique({
       where: { id },
       select: {
         id: true,
         userId: true,
-        parentId: true,
       },
     });
 
-    if (!existing) {
+    if (!existingComment) {
       return NextResponse.json(
         { error: "Kommentar nicht gefunden." },
         { status: 404 }
       );
     }
 
-    const isOwner = existing.userId === userId;
-
-    if (!isOwner && !isAdmin) {
+    if (existingComment.userId !== user.id && user.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.comment.deleteMany({
-        where: {
-          parentId: id,
-        },
-      });
-
-      await tx.comment.delete({
-        where: {
-          id,
-        },
-      });
+    await prisma.comment.delete({
+      where: { id },
     });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      message: "Kommentar gelöscht.",
+    });
   } catch (error) {
     console.error("DELETE /api/comments/[id] error:", error);
 

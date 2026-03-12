@@ -1,10 +1,10 @@
-// src/app/api/admin/users/[id]/route.ts
-
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+
+export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
@@ -12,130 +12,159 @@ type RouteContext = {
   }>;
 };
 
-/*
-  Hilfsfunktion:
-  Prüft Admin-Session.
-*/
-async function requireAdmin() {
-  const session = await getServerSession(authOptions);
+type SessionUser = {
+  id?: string | null;
+  role?: string | null;
+  email?: string | null;
+  name?: string | null;
+};
 
-  if (!session?.user) {
-    return {
-      ok: false as const,
-      response: NextResponse.json(
-        { error: "Nicht eingeloggt." },
-        { status: 401 }
-      ),
-    };
+type AdminSessionUser = {
+  id: string;
+  role: "ADMIN";
+  email?: string | null;
+  name?: string | null;
+};
+
+function getSessionUser(
+  session: Awaited<ReturnType<typeof getServerSession>>
+): SessionUser | null {
+  if (!session) {
+    return null;
   }
 
-  if (session.user.role !== "ADMIN") {
+  const maybeSession = session as { user?: unknown };
+
+  if (!maybeSession.user || typeof maybeSession.user !== "object") {
+    return null;
+  }
+
+  return maybeSession.user as SessionUser;
+}
+
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const user = getSessionUser(session);
+
+  if (!user?.id || user.role !== "ADMIN") {
     return {
       ok: false as const,
-      response: NextResponse.json(
-        { error: "Kein Zugriff. Nur Admins erlaubt." },
-        { status: 403 }
-      ),
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     };
   }
 
   return {
     ok: true as const,
-    session,
+    user: user as AdminSessionUser,
   };
 }
 
-/*
-  PATCH /api/admin/users/[id]
-  JSON-Variante zum Rollenwechsel
-*/
-export async function PATCH(request: Request, context: RouteContext) {
+function redirectToUsers(
+  request: NextRequest,
+  status?: "deleted",
+  error?: string
+) {
+  const url = new URL("/dashboard/users", request.url);
+
+  if (status) {
+    url.searchParams.set("status", status);
+  }
+
+  if (error) {
+    url.searchParams.set("error", error);
+  }
+
+  return NextResponse.redirect(url, 303);
+}
+
+export async function GET(_request: NextRequest, context: RouteContext) {
   try {
-    const adminCheck = await requireAdmin();
-    if (!adminCheck.ok) return adminCheck.response;
+    const auth = await requireAdmin();
+
+    if (!auth.ok) {
+      return auth.response;
+    }
 
     const { id } = await context.params;
-    const body = await request.json();
-    const role = String(body?.role ?? "").trim();
 
-    if (role !== "ADMIN" && role !== "USER") {
+    if (!id?.trim()) {
       return NextResponse.json(
-        { error: "Ungültige Rolle." },
+        { error: "Ungültige Benutzer-ID." },
         { status: 400 }
       );
     }
 
-    // Optionaler Schutz: Admin darf sich nicht selbst herabstufen
-    if (id === adminCheck.session.user.id && role === "USER") {
-      return NextResponse.json(
-        { error: "Du kannst deine eigene Admin-Rolle nicht entfernen." },
-        { status: 400 }
-      );
-    }
-
-    const existingUser = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, role: true },
+      include: {
+        _count: {
+          select: {
+            comments: true,
+            releases: true,
+            mediaItems: true,
+            sessions: true,
+            accounts: true,
+            downloads: true,
+            releaseLikes: true,
+          },
+        },
+      },
     });
 
-    if (!existingUser) {
+    if (!user) {
       return NextResponse.json(
-        { error: "Nutzer nicht gefunden." },
+        { error: "Benutzer nicht gefunden." },
         { status: 404 }
       );
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id },
-      data: { role: role as "ADMIN" | "USER" },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-      },
-    });
-
-    return NextResponse.json({
-      message: "Rolle erfolgreich aktualisiert.",
-      user: updatedUser,
-    });
+    return NextResponse.json({ user });
   } catch (error) {
-    console.error("Fehler beim Aktualisieren der Rolle:", error);
+    console.error("GET /api/admin/users/[id] error:", error);
 
     return NextResponse.json(
-      { error: "Interner Serverfehler." },
+      { error: "Benutzer konnte nicht geladen werden." },
       { status: 500 }
     );
   }
 }
 
-/*
-  DELETE /api/admin/users/[id]
-  JSON-Variante zum Löschen
-*/
-export async function DELETE(_request: Request, context: RouteContext) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
-    const adminCheck = await requireAdmin();
-    if (!adminCheck.ok) return adminCheck.response;
+    const auth = await requireAdmin();
 
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const currentUserId = auth.user.id;
     const { id } = await context.params;
 
-    // Admin darf sich nicht selbst löschen
-    if (id === adminCheck.session.user.id) {
+    if (!id?.trim()) {
       return NextResponse.json(
-        { error: "Du kannst dein eigenes Konto nicht löschen." },
+        { error: "Ungültige Benutzer-ID." },
+        { status: 400 }
+      );
+    }
+
+    if (currentUserId === id) {
+      return NextResponse.json(
+        { error: "Du kannst deinen eigenen Account nicht löschen." },
         { status: 400 }
       );
     }
 
     const existingUser = await prisma.user.findUnique({
       where: { id },
-      select: { id: true },
+      select: {
+        id: true,
+        role: true,
+      },
     });
 
     if (!existingUser) {
       return NextResponse.json(
-        { error: "Nutzer nicht gefunden." },
+        { error: "Benutzer nicht gefunden." },
         { status: 404 }
       );
     }
@@ -145,107 +174,64 @@ export async function DELETE(_request: Request, context: RouteContext) {
     });
 
     return NextResponse.json({
-      message: "Nutzer erfolgreich gelöscht.",
+      message: "Benutzer erfolgreich gelöscht.",
     });
   } catch (error) {
-    console.error("Fehler beim Löschen des Nutzers:", error);
+    console.error("DELETE /api/admin/users/[id] error:", error);
 
     return NextResponse.json(
-      { error: "Interner Serverfehler." },
+      { error: "Benutzer konnte nicht gelöscht werden." },
       { status: 500 }
     );
   }
 }
 
-/*
-  POST /api/admin/users/[id]
-  HTML-Form-Variante für Dashboard-Formulare
-
-  Warum POST?
-  Weil normale HTML-Forms kein PATCH oder DELETE direkt senden.
-  Deshalb emulieren wir das über hidden field "_method".
-*/
-export async function POST(request: Request, context: RouteContext) {
+export async function POST(request: NextRequest, context: RouteContext) {
   try {
-    const adminCheck = await requireAdmin();
-    if (!adminCheck.ok) return adminCheck.response;
+    const auth = await requireAdmin();
 
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const currentUserId = auth.user.id;
     const { id } = await context.params;
     const formData = await request.formData();
+    const method = String(formData.get("_method") ?? "")
+      .trim()
+      .toUpperCase();
 
-    const method = String(formData.get("_method") ?? "").toUpperCase();
-    const role = String(formData.get("role") ?? "").trim();
-    const referer = request.headers.get("referer") || "/dashboard/users";
-
-    if (method === "PATCH") {
-      if (role !== "ADMIN" && role !== "USER") {
-        return NextResponse.redirect(new URL("/dashboard/users", request.url), {
-          status: 303,
-        });
-      }
-
-      if (id === adminCheck.session.user.id && role === "USER") {
-        return NextResponse.redirect(new URL(referer, request.url), {
-          status: 303,
-        });
-      }
-
-      const existingUser = await prisma.user.findUnique({
-        where: { id },
-        select: { id: true },
-      });
-
-      if (!existingUser) {
-        return NextResponse.redirect(new URL(referer, request.url), {
-          status: 303,
-        });
-      }
-
-      await prisma.user.update({
-        where: { id },
-        data: { role: role as "ADMIN" | "USER" },
-      });
-
-      return NextResponse.redirect(new URL(referer, request.url), {
-        status: 303,
-      });
+    if (method !== "DELETE") {
+      return redirectToUsers(request, undefined, "invalid_method");
     }
 
-    if (method === "DELETE") {
-      if (id === adminCheck.session.user.id) {
-        return NextResponse.redirect(new URL(referer, request.url), {
-          status: 303,
-        });
-      }
-
-      const existingUser = await prisma.user.findUnique({
-        where: { id },
-        select: { id: true },
-      });
-
-      if (!existingUser) {
-        return NextResponse.redirect(new URL(referer, request.url), {
-          status: 303,
-        });
-      }
-
-      await prisma.user.delete({
-        where: { id },
-      });
-
-      return NextResponse.redirect(new URL(referer, request.url), {
-        status: 303,
-      });
+    if (!id?.trim()) {
+      return redirectToUsers(request, undefined, "invalid_user");
     }
 
-    return NextResponse.redirect(new URL(referer, request.url), {
-      status: 303,
+    if (currentUserId === id) {
+      return redirectToUsers(request, undefined, "cannot_delete_self");
+    }
+
+    const existingUser = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+      },
     });
+
+    if (!existingUser) {
+      return redirectToUsers(request, undefined, "not_found");
+    }
+
+    await prisma.user.delete({
+      where: { id },
+    });
+
+    return redirectToUsers(request, "deleted");
   } catch (error) {
-    console.error("Fehler bei Admin-User-Aktion:", error);
+    console.error("POST /api/admin/users/[id] error:", error);
 
-    return NextResponse.redirect(new URL("/dashboard/users", request.url), {
-      status: 303,
-    });
+    return redirectToUsers(request, undefined, "delete_failed");
   }
 }

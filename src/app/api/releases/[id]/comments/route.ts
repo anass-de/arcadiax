@@ -4,6 +4,8 @@ import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 
+export const runtime = "nodejs";
+
 type RouteContext = {
   params: Promise<{
     id: string;
@@ -13,94 +15,85 @@ type RouteContext = {
 type SessionUser = {
   id?: string | null;
   role?: string | null;
+  email?: string | null;
+  name?: string | null;
 };
 
-function getSessionUser(session: Awaited<ReturnType<typeof getServerSession>>) {
-  return (session?.user as SessionUser | undefined) ?? {};
+function getSessionUser(
+  session: Awaited<ReturnType<typeof getServerSession>>
+): SessionUser | null {
+  if (!session) {
+    return null;
+  }
+
+  const maybeSession = session as { user?: unknown };
+
+  if (!maybeSession.user || typeof maybeSession.user !== "object") {
+    return null;
+  }
+
+  return maybeSession.user as SessionUser;
 }
 
 export async function GET(_req: NextRequest, context: RouteContext) {
   try {
-    const { id: releaseId } = await context.params;
+    const { id } = await context.params;
 
-    if (!releaseId?.trim()) {
+    if (!id?.trim()) {
       return NextResponse.json(
-        { error: "Ungültige Release-ID" },
+        { error: "Ungültige Release-ID." },
         { status: 400 }
-      );
-    }
-
-    const session = await getServerSession(authOptions);
-    const { id: userId, role } = getSessionUser(session);
-    const isAdmin = role === "ADMIN";
-
-    const release = await prisma.release.findUnique({
-      where: { id: releaseId },
-      select: {
-        id: true,
-        status: true,
-        authorId: true,
-      },
-    });
-
-    if (!release) {
-      return NextResponse.json(
-        { error: "Release not found" },
-        { status: 404 }
-      );
-    }
-
-    const isOwner = !!userId && release.authorId === userId;
-    const isPublished = release.status === "PUBLISHED";
-
-    if (!isPublished && !isOwner && !isAdmin) {
-      return NextResponse.json(
-        { error: "Release not found" },
-        { status: 404 }
       );
     }
 
     const comments = await prisma.comment.findMany({
       where: {
-        releaseId,
+        releaseId: id,
         parentId: null,
+      },
+      orderBy: {
+        createdAt: "desc",
       },
       include: {
         user: {
           select: {
             id: true,
-            name: true,
             username: true,
+            name: true,
             image: true,
           },
         },
         replies: {
+          orderBy: {
+            createdAt: "asc",
+          },
           include: {
             user: {
               select: {
                 id: true,
-                name: true,
                 username: true,
+                name: true,
                 image: true,
               },
             },
           },
-          orderBy: {
-            createdAt: "asc",
+        },
+        _count: {
+          select: {
+            replies: true,
           },
         },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
     });
 
-    return NextResponse.json({ comments });
+    return NextResponse.json({
+      comments,
+    });
   } catch (error) {
     console.error("GET comments error:", error);
 
     return NextResponse.json(
-      { error: "Failed to load comments" },
+      { error: "Kommentare konnten nicht geladen werden." },
       { status: 500 }
     );
   }
@@ -108,95 +101,62 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
 export async function POST(req: NextRequest, context: RouteContext) {
   try {
-    const session = await getServerSession(authOptions);
-    const { id: userId } = getSessionUser(session);
+    const { id } = await context.params;
 
-    if (!userId) {
+    if (!id?.trim()) {
       return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
+        { error: "Ungültige Release-ID." },
+        { status: 400 }
       );
     }
 
-    const { id: releaseId } = await context.params;
+    const session = await getServerSession(authOptions);
+    const user = getSessionUser(session);
 
-    if (!releaseId?.trim()) {
+    if (!user?.id) {
       return NextResponse.json(
-        { error: "Ungültige Release-ID" },
-        { status: 400 }
+        { error: "Du musst eingeloggt sein." },
+        { status: 401 }
       );
     }
 
     const body = await req.json().catch(() => null);
 
-    const content =
-      typeof body?.content === "string" ? body.content.trim() : "";
-
+    const content = String(body?.content ?? "").trim();
     const parentId =
-      typeof body?.parentId === "string" && body.parentId.trim().length > 0
+      typeof body?.parentId === "string" && body.parentId.trim()
         ? body.parentId.trim()
         : null;
 
     if (!content) {
       return NextResponse.json(
-        { error: "Content is required" },
+        { error: "Kommentar darf nicht leer sein." },
         { status: 400 }
       );
     }
 
     if (content.length > 2000) {
       return NextResponse.json(
-        { error: "Comment is too long" },
+        { error: "Kommentar ist zu lang." },
         { status: 400 }
       );
     }
 
-    const release = await prisma.release.findUnique({
-      where: { id: releaseId },
-      select: {
-        id: true,
-        status: true,
-      },
-    });
-
-    if (!release) {
-      return NextResponse.json(
-        { error: "Release not found" },
-        { status: 404 }
-      );
-    }
-
-    if (release.status !== "PUBLISHED") {
-      return NextResponse.json(
-        { error: "Comments are only allowed on published releases" },
-        { status: 403 }
-      );
-    }
-
     if (parentId) {
-      const parentComment = await prisma.comment.findFirst({
+      const parent = await prisma.comment.findFirst({
         where: {
           id: parentId,
-          releaseId,
+          releaseId: id,
         },
         select: {
           id: true,
-          parentId: true,
         },
       });
 
-      if (!parentComment) {
+      if (!parent) {
         return NextResponse.json(
-          { error: "Parent comment not found" },
+          { error: "Antwort-Ziel wurde nicht gefunden." },
           { status: 404 }
-        );
-      }
-
-      // Optional: Nur 2 Ebenen erlauben (Kommentar -> Reply)
-      if (parentComment.parentId) {
-        return NextResponse.json(
-          { error: "Nested replies deeper than one level are not allowed" },
-          { status: 400 }
         );
       }
     }
@@ -204,43 +164,30 @@ export async function POST(req: NextRequest, context: RouteContext) {
     const comment = await prisma.comment.create({
       data: {
         content,
-        userId,
-        releaseId,
+        releaseId: id,
+        userId: user.id,
         parentId,
       },
       include: {
         user: {
           select: {
             id: true,
-            name: true,
             username: true,
+            name: true,
             image: true,
-          },
-        },
-        replies: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                username: true,
-                image: true,
-              },
-            },
-          },
-          orderBy: {
-            createdAt: "asc",
           },
         },
       },
     });
 
-    return NextResponse.json({ comment }, { status: 201 });
+    return NextResponse.json({
+      comment,
+    });
   } catch (error) {
     console.error("POST comment error:", error);
 
     return NextResponse.json(
-      { error: "Failed to create comment" },
+      { error: "Kommentar konnte nicht erstellt werden." },
       { status: 500 }
     );
   }

@@ -11,9 +11,12 @@ import {
   Shield,
   Sparkles,
   Users,
+  Film,
+  ExternalLink,
 } from "lucide-react";
 
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 function getPrimaryAction(role?: string | null) {
   if (role === "ADMIN") {
@@ -60,6 +63,8 @@ function getSecondaryAction(role?: string | null) {
   };
 }
 
+export const dynamic = "force-dynamic";
+
 export default async function HomePage() {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? null;
@@ -67,6 +72,24 @@ export default async function HomePage() {
   const primaryAction = getPrimaryAction(role);
   const secondaryAction = getSecondaryAction(role);
   const PrimaryIcon = primaryAction.icon;
+
+  const latestVideos = await prisma.homeMedia.findMany({
+    where: {
+      active: true,
+      type: "VIDEO",
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    take: 3,
+  });
+
+  const latestPhotos = await prisma.homeMedia.findMany({
+    where: {
+      active: true,
+      type: "IMAGE",
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    take: 3,
+  });
 
   return (
     <div className="space-y-8 lg:space-y-10">
@@ -254,6 +277,172 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-sm uppercase tracking-[0.22em] text-white/40">
+              Media Highlights
+            </div>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
+              Neueste Videos
+            </h2>
+            <p className="mt-2 text-sm text-white/60">
+              Die letzten 3 veröffentlichten Videos aus deiner Media-Bibliothek.
+            </p>
+          </div>
+
+          <Link
+            href="/videos"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm font-semibold text-white/85 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
+          >
+            <Film className="h-4 w-4 text-blue-300" />
+            <span>Alle Videos</span>
+          </Link>
+        </div>
+
+        {latestVideos.length === 0 ? (
+          <div className="rounded-[24px] border border-white/10 bg-[#07090f] p-6 text-white/50">
+            Noch keine veröffentlichten Videos vorhanden.
+          </div>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {latestVideos.map((item) => (
+              <article
+                key={item.id}
+                className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07090f] transition hover:border-blue-400/20"
+              >
+                <video
+                  src={item.url}
+                  controls
+                  className="aspect-video w-full bg-black object-cover"
+                />
+
+                <div className="space-y-4 p-5">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white">
+                      {item.title || "Ohne Titel"}
+                    </h3>
+
+                    {item.description ? (
+                      <p className="mt-2 text-sm leading-6 text-white/60">
+                        {item.description}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-white/35">
+                        Keine Beschreibung vorhanden.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs text-white/40">
+                      Aktualisiert:{" "}
+                      {new Intl.DateTimeFormat("de-DE", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      }).format(item.updatedAt)}
+                    </div>
+
+                    <Link
+                      href="/videos"
+                      className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/75 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
+                    >
+                      Mehr
+                      <ExternalLink className="h-4 w-4" />
+                    </Link>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-sm uppercase tracking-[0.22em] text-white/40">
+              Gallery
+            </div>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
+              Neueste Fotos
+            </h2>
+            <p className="mt-2 text-sm text-white/60">
+              Die letzten 3 veröffentlichten Bilder aus deiner Media-Bibliothek.
+            </p>
+          </div>
+
+          <Link
+            href="/photos"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm font-semibold text-white/85 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
+          >
+            <ImageIcon className="h-4 w-4 text-blue-300" />
+            <span>Alle Fotos</span>
+          </Link>
+        </div>
+
+        {latestPhotos.length === 0 ? (
+          <div className="rounded-[24px] border border-white/10 bg-[#07090f] p-6 text-white/50">
+            Noch keine veröffentlichten Fotos vorhanden.
+          </div>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {latestPhotos.map((item) => (
+              <article
+                key={item.id}
+                className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07090f] transition hover:border-blue-400/20"
+              >
+                <Link href={item.url} target="_blank" className="block bg-black">
+                  <img
+                    src={item.url}
+                    alt={item.title || "Foto"}
+                    className="aspect-video w-full object-cover transition duration-300 hover:scale-[1.02]"
+                  />
+                </Link>
+
+                <div className="space-y-4 p-5">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white">
+                      {item.title || "Ohne Titel"}
+                    </h3>
+
+                    {item.description ? (
+                      <p className="mt-2 text-sm leading-6 text-white/60">
+                        {item.description}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-white/35">
+                        Keine Beschreibung vorhanden.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs text-white/40">
+                      Aktualisiert:{" "}
+                      {new Intl.DateTimeFormat("de-DE", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      }).format(item.updatedAt)}
+                    </div>
+
+                    <Link
+                      href="/photos"
+                      className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/75 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
+                    >
+                      Mehr
+                      <ExternalLink className="h-4 w-4" />
+                    </Link>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
           <div className="mb-5 flex items-center gap-3">
@@ -338,6 +527,22 @@ export default async function HomePage() {
             >
               <Package className="h-4 w-4 text-blue-300" />
               <span>Releases öffnen</span>
+            </Link>
+
+            <Link
+              href="/videos"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/85 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+            >
+              <Film className="h-4 w-4 text-blue-300" />
+              <span>Videos</span>
+            </Link>
+
+            <Link
+              href="/photos"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/85 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+            >
+              <ImageIcon className="h-4 w-4 text-blue-300" />
+              <span>Fotos</span>
             </Link>
 
             {role === "ADMIN" ? (

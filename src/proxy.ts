@@ -2,10 +2,17 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+async function getAuthToken(req: NextRequest) {
+  return getToken({
+    req,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Statische Dateien und Next-internes immer erlauben
+  // Immer erlauben: Next intern + statische Dateien
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon.ico") ||
@@ -16,13 +23,29 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Öffentliche Seiten und öffentliche APIs erlauben
+  const token = await getAuthToken(req);
+  const isLoggedIn = !!token;
+  const role = String(token?.role ?? "").toUpperCase();
+  const isAdmin = role === "ADMIN";
+
+  // Login/Register nur für Gäste
+  if (pathname === "/login" || pathname === "/register") {
+    if (isLoggedIn) {
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+
+    return NextResponse.next();
+  }
+
+  // Öffentliche Seiten
+  if (pathname === "/" || pathname.startsWith("/releases")) {
+    return NextResponse.next();
+  }
+
+  // Öffentliche APIs
   if (
-    pathname === "/" ||
-    pathname.startsWith("/releases") ||
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/register") ||
     pathname.startsWith("/api/auth") ||
+    pathname === "/api/register" ||
     pathname.startsWith("/api/releases") ||
     pathname.startsWith("/api/comments") ||
     pathname.startsWith("/api/download")
@@ -30,32 +53,35 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Dashboard nur für eingeloggte Nutzer
-  if (pathname.startsWith("/dashboard")) {
-    const token = await getToken({
-      req,
-      secret: process.env.NEXTAUTH_SECRET,
-    });
-
-    if (!token) {
+  // Profile nur für eingeloggte Nutzer
+  if (pathname.startsWith("/profile")) {
+    if (!isLoggedIn) {
       return NextResponse.redirect(new URL("/login", req.url));
     }
 
     return NextResponse.next();
   }
 
-  // Admin-API nur für Admins
-  if (pathname.startsWith("/api/admin")) {
-    const token = await getToken({
-      req,
-      secret: process.env.NEXTAUTH_SECRET,
-    });
+  // Dashboard strikt nur für Admins
+  if (pathname.startsWith("/dashboard")) {
+    if (!isLoggedIn) {
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
 
-    if (!token) {
+    if (!isAdmin) {
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+
+    return NextResponse.next();
+  }
+
+  // Admin-API strikt nur für Admins
+  if (pathname.startsWith("/api/admin")) {
+    if (!isLoggedIn) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (token.role !== "ADMIN") {
+    if (!isAdmin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

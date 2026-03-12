@@ -1,260 +1,283 @@
-// src/app/api/admin/releases/route.ts
-import { NextResponse } from "next/server";
+import { promises as fs } from "fs";
+import path from "path";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-type ReleaseStatus = "DRAFT" | "PUBLISHED";
+export const runtime = "nodejs";
 
-type CreateReleaseBody = {
-  title?: string;
-  slug?: string;
-  version?: string;
-  shortDescription?: string;
-  description?: string;
-  changelog?: string;
-  status?: ReleaseStatus;
-  fileUrl?: string;
-  filePath?: string;
-  fileName?: string;
-  fileSize?: number;
-  fileType?: string;
-  imageUrl?: string | null;
-  imagePath?: string | null;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1 GB
+
+const IMAGE_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+  "image/svg+xml",
+]);
+
+type SessionUser = {
+  id?: string | null;
+  role?: string | null;
+  email?: string | null;
+  name?: string | null;
 };
 
-function slugify(input: string) {
-  return input
-    .trim()
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
+type AdminSessionUser = {
+  id: string;
+  role: "ADMIN";
+  email?: string | null;
+  name?: string | null;
+};
+
+function getSessionUser(
+  session: Awaited<ReturnType<typeof getServerSession>>
+): SessionUser | null {
+  if (!session) {
+    return null;
+  }
+
+  const maybeSession = session as { user?: unknown };
+
+  if (!maybeSession.user || typeof maybeSession.user !== "object") {
+    return null;
+  }
+
+  return maybeSession.user as SessionUser;
 }
 
-function isValidReleaseStatus(value: unknown): value is ReleaseStatus {
-  return value === "DRAFT" || value === "PUBLISHED";
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const user = getSessionUser(session);
+
+  if (!user?.id || user.role !== "ADMIN") {
+    return {
+      ok: false as const,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    };
+  }
+
+  return {
+    ok: true as const,
+    user: user as AdminSessionUser,
+  };
 }
 
-function normalizeOptionalString(value: unknown) {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+function normalizeOptionalText(value: FormDataEntryValue | null) {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
 }
 
-function normalizeRequiredString(value: unknown) {
-  if (typeof value !== "string") return "";
-  return value.trim();
+function sanitizeFileName(fileName: string) {
+  const ext = path.extname(fileName).toLowerCase();
+  const base = path.basename(fileName, ext);
+
+  const safeBase =
+    base
+      .normalize("NFKD")
+      .replace(/[^\w.-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 120) || "file";
+
+  const safeExt = ext.replace(/[^\w.]+/g, "");
+
+  return `${safeBase}${safeExt}`;
 }
 
-function isSafeReleaseStoragePath(path: string) {
+function slugify(value: string) {
   return (
-    path.startsWith("releases/") &&
-    (path.includes("/files/") || path.includes("/images/"))
+    value
+      .normalize("NFKD")
+      .replace(/[^\w\s-]+/g, "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "release"
   );
 }
 
-export async function GET(request: Request) {
+async function ensureDir(dirPath: string) {
+  await fs.mkdir(dirPath, { recursive: true });
+}
+
+async function saveUploadedFile(
+  file: File,
+  targetDir: string,
+  publicBasePath: string
+) {
+  await ensureDir(targetDir);
+
+  const safeName = sanitizeFileName(file.name);
+  const finalName = `${Date.now()}-${safeName}`;
+  const finalPath = path.join(targetDir, finalName);
+
+  const bytes = Buffer.from(await file.arrayBuffer());
+  await fs.writeFile(finalPath, bytes);
+
+  return {
+    absolutePath: finalPath,
+    publicUrl: `${publicBasePath}/${finalName}`,
+  };
+}
+
+async function deleteFileIfExists(absolutePath: string | null) {
+  if (!absolutePath) {
+    return;
+  }
+
   try {
-    const { searchParams } = new URL(request.url);
-    const includeDrafts = searchParams.get("includeDrafts") === "true";
-
-    const session = await getServerSession(authOptions);
-    const isAdmin =
-      (session?.user as { role?: string } | undefined)?.role === "ADMIN";
-
-    const releases = await prisma.release.findMany({
-      where:
-        includeDrafts && isAdmin
-          ? undefined
-          : {
-              status: "PUBLISHED",
-            },
-      orderBy: {
-        createdAt: "desc",
-      },
-      include: {
-        author: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            image: true,
-          },
-        },
-        _count: {
-          select: {
-            comments: true,
-            likes: true,
-            downloads: true,
-          },
-        },
-      },
-    });
-
-    return NextResponse.json({
-      ok: true,
-      releases,
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unbekannter Serverfehler.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    await fs.unlink(absolutePath);
+  } catch {
+    // absichtlich ignorieren
   }
 }
 
-export async function POST(request: Request) {
-  try {
-    const session = await getServerSession(authOptions);
+async function createUniqueSlug(baseSlug: string) {
+  let slug = baseSlug;
+  let counter = 2;
 
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: "Nicht eingeloggt." },
-        { status: 401 }
-      );
-    }
-
-    const user = session.user as { id?: string; role?: string };
-
-    if (user.role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Keine Berechtigung." },
-        { status: 403 }
-      );
-    }
-
-    if (!user.id) {
-      return NextResponse.json(
-        { error: "Session enthält keine Benutzer-ID." },
-        { status: 401 }
-      );
-    }
-
-    const body = (await request.json()) as CreateReleaseBody;
-
-    const title = normalizeRequiredString(body.title);
-    const version = normalizeRequiredString(body.version);
-    const slugInput = normalizeRequiredString(body.slug);
-    const slug = slugify(slugInput || title);
-
-    const description = normalizeOptionalString(body.description);
-    const changelog = normalizeOptionalString(body.changelog);
-    const shortDescription = normalizeOptionalString(body.shortDescription);
-
-    const fileUrl = normalizeRequiredString(body.fileUrl);
-    const filePath = normalizeRequiredString(body.filePath);
-    const fileName = normalizeRequiredString(body.fileName);
-    const fileType = normalizeOptionalString(body.fileType);
-    const fileSize =
-      typeof body.fileSize === "number" && Number.isFinite(body.fileSize)
-        ? Math.max(0, Math.floor(body.fileSize))
-        : 0;
-
-    const imageUrl = normalizeOptionalString(body.imageUrl);
-    const imagePath = normalizeOptionalString(body.imagePath);
-
-    const status: ReleaseStatus = isValidReleaseStatus(body.status)
-      ? body.status
-      : "DRAFT";
-
-    if (!title) {
-      return NextResponse.json({ error: "title fehlt." }, { status: 400 });
-    }
-
-    if (!version) {
-      return NextResponse.json({ error: "version fehlt." }, { status: 400 });
-    }
-
-    if (!slug) {
-      return NextResponse.json(
-        { error: "slug konnte nicht erzeugt werden." },
-        { status: 400 }
-      );
-    }
-
-    if (!fileUrl) {
-      return NextResponse.json({ error: "fileUrl fehlt." }, { status: 400 });
-    }
-
-    if (!filePath) {
-      return NextResponse.json({ error: "filePath fehlt." }, { status: 400 });
-    }
-
-    if (!fileName) {
-      return NextResponse.json({ error: "fileName fehlt." }, { status: 400 });
-    }
-
-    if (!isSafeReleaseStoragePath(filePath)) {
-      return NextResponse.json(
-        { error: "Ungültiger filePath." },
-        { status: 400 }
-      );
-    }
-
-    if (imagePath && !isSafeReleaseStoragePath(imagePath)) {
-      return NextResponse.json(
-        { error: "Ungültiger imagePath." },
-        { status: 400 }
-      );
-    }
-
+  while (true) {
     const existing = await prisma.release.findUnique({
       where: { slug },
       select: { id: true },
     });
 
-    if (existing) {
-      return NextResponse.json(
-        { error: "Ein Release mit diesem Slug existiert bereits." },
-        { status: 409 }
-      );
+    if (!existing) {
+      return slug;
     }
 
-    const finalDescription = description ?? shortDescription ?? `${title} ${version}`;
+    slug = `${baseSlug}-${counter}`;
+    counter += 1;
+  }
+}
 
-    const release = await prisma.release.create({
+function redirectWithStatus(request: NextRequest, status: string) {
+  return NextResponse.redirect(
+    new URL(`/dashboard/releases?status=${status}`, request.url),
+    303
+  );
+}
+
+function redirectWithError(request: NextRequest, error: string) {
+  return NextResponse.redirect(
+    new URL(`/dashboard/releases/new?error=${error}`, request.url),
+    303
+  );
+}
+
+export async function POST(request: NextRequest) {
+  let savedImagePath: string | null = null;
+  let savedFilePath: string | null = null;
+
+  try {
+    const auth = await requireAdmin();
+
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const userId = auth.user.id;
+    const formData = await request.formData();
+
+    const title = String(formData.get("title") ?? "").trim();
+    const version = String(formData.get("version") ?? "").trim();
+    const slugInput = String(formData.get("slug") ?? "").trim();
+    const description = normalizeOptionalText(formData.get("description"));
+    const changelog = normalizeOptionalText(formData.get("changelog"));
+    const statusRaw = String(formData.get("status") ?? "DRAFT")
+      .trim()
+      .toUpperCase();
+
+    if (!title) {
+      return redirectWithError(request, "missing_title");
+    }
+
+    if (!version) {
+      return redirectWithError(request, "missing_version");
+    }
+
+    if (statusRaw !== "DRAFT" && statusRaw !== "PUBLISHED") {
+      return redirectWithError(request, "invalid_status");
+    }
+
+    const fileEntry = formData.get("file");
+
+    if (!(fileEntry instanceof File) || fileEntry.size <= 0) {
+      return redirectWithError(request, "missing_file");
+    }
+
+    if (fileEntry.size > MAX_FILE_SIZE) {
+      return redirectWithError(request, "file_too_large");
+    }
+
+    const imageEntry = formData.get("image");
+    const imageFile =
+      imageEntry instanceof File && imageEntry.size > 0 ? imageEntry : null;
+
+    if (imageFile) {
+      const imageMime = imageFile.type?.trim();
+
+      if (!imageMime || !IMAGE_MIME_TYPES.has(imageMime)) {
+        return redirectWithError(request, "invalid_image_type");
+      }
+
+      if (imageFile.size > MAX_IMAGE_SIZE) {
+        return redirectWithError(request, "image_too_large");
+      }
+    }
+
+    const uploadsRoot = path.join(process.cwd(), "public", "uploads", "releases");
+    const filesDir = path.join(uploadsRoot, "files");
+    const imagesDir = path.join(uploadsRoot, "images");
+
+    const savedReleaseFile = await saveUploadedFile(
+      fileEntry,
+      filesDir,
+      "/uploads/releases/files"
+    );
+    savedFilePath = savedReleaseFile.absolutePath;
+
+    let imageUrl: string | null = null;
+
+    if (imageFile) {
+      const savedImage = await saveUploadedFile(
+        imageFile,
+        imagesDir,
+        "/uploads/releases/images"
+      );
+      savedImagePath = savedImage.absolutePath;
+      imageUrl = savedImage.publicUrl;
+    }
+
+    const baseSlug = slugify(slugInput || title);
+    const uniqueSlug = await createUniqueSlug(baseSlug);
+
+    await prisma.release.create({
       data: {
         title,
         version,
-        slug,
-        description: finalDescription,
+        slug: uniqueSlug,
+        description,
         changelog,
-        fileUrl,
+        fileUrl: savedReleaseFile.publicUrl,
         imageUrl,
-        status,
-        authorId: user.id,
-      },
-      include: {
-        author: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            image: true,
-          },
-        },
+        status: statusRaw,
+        authorId: userId,
       },
     });
 
-    return NextResponse.json({
-      ok: true,
-      release,
-      meta: {
-        filePath,
-        fileName,
-        fileSize,
-        fileType,
-        imagePath,
-      },
-    });
+    return redirectWithStatus(request, "created");
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unbekannter Serverfehler.";
+    await deleteFileIfExists(savedImagePath);
+    await deleteFileIfExists(savedFilePath);
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("POST /api/admin/releases error:", error);
+
+    return redirectWithError(request, "create_failed");
   }
 }
