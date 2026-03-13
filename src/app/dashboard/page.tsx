@@ -9,6 +9,42 @@ type SessionUser = {
   role?: "USER" | "ADMIN" | null;
 };
 
+type DashboardRelease = {
+  id: string;
+  title: string;
+  slug: string;
+  version: string;
+  status: "DRAFT" | "PUBLISHED";
+  createdAt: Date;
+  downloadCount: number;
+};
+
+type DashboardComment = {
+  id: string;
+  content: string;
+  createdAt: Date;
+  user: {
+    username: string | null;
+    name: string | null;
+    email: string | null;
+  };
+  release: {
+    id: string;
+    slug: string;
+    title: string;
+    version: string;
+  };
+};
+
+type DashboardUser = {
+  id: string;
+  username: string | null;
+  name: string | null;
+  email: string | null;
+  role: "USER" | "ADMIN";
+  createdAt: Date;
+};
+
 function getReleaseHref(release: { id: string; slug: string }) {
   return release.slug?.trim() ? `/releases/${release.slug}` : `/releases/${release.id}`;
 }
@@ -95,6 +131,10 @@ export default async function DashboardPage() {
     }),
   ]);
 
+  const typedLatestReleases: DashboardRelease[] = latestReleases;
+  const typedLatestComments: DashboardComment[] = latestComments;
+  const typedRecentUsers: DashboardUser[] = recentUsers;
+
   const totalDownloadCount = totalDownloads._sum.downloadCount ?? 0;
 
   return (
@@ -109,17 +149,13 @@ export default async function DashboardPage() {
         <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
           <p className="text-sm text-zinc-400">Medien</p>
           <p className="mt-3 text-3xl font-bold text-white">{mediaCount}</p>
-          <p className="mt-2 text-xs text-zinc-500">
-            Bilder und Videos für Home
-          </p>
+          <p className="mt-2 text-xs text-zinc-500">Bilder und Videos für Home</p>
         </div>
 
         <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
           <p className="text-sm text-zinc-400">Kommentare</p>
           <p className="mt-3 text-3xl font-bold text-white">{commentCount}</p>
-          <p className="mt-2 text-xs text-zinc-500">
-            Community Aktivität gesamt
-          </p>
+          <p className="mt-2 text-xs text-zinc-500">Community Aktivität gesamt</p>
         </div>
 
         <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
@@ -130,12 +166,8 @@ export default async function DashboardPage() {
 
         <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
           <p className="text-sm text-zinc-400">Downloads</p>
-          <p className="mt-3 text-3xl font-bold text-white">
-            {totalDownloadCount}
-          </p>
-          <p className="mt-2 text-xs text-zinc-500">
-            Gesamte Release Downloads
-          </p>
+          <p className="mt-3 text-3xl font-bold text-white">{totalDownloadCount}</p>
+          <p className="mt-2 text-xs text-zinc-500">Gesamte Release Downloads</p>
         </div>
       </section>
 
@@ -176,9 +208,7 @@ export default async function DashboardPage() {
       <section className="grid gap-6 2xl:grid-cols-2">
         <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
           <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-xl font-semibold text-white">
-              Letzte Releases
-            </h2>
+            <h2 className="text-xl font-semibold text-white">Letzte Releases</h2>
 
             <Link
               href="/dashboard/releases"
@@ -188,13 +218,13 @@ export default async function DashboardPage() {
             </Link>
           </div>
 
-          {latestReleases.length === 0 ? (
+          {typedLatestReleases.length === 0 ? (
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-sm text-zinc-400">
               Noch keine Releases vorhanden.
             </div>
           ) : (
             <div className="space-y-4">
-              {latestReleases.map((release) => (
+              {typedLatestReleases.map((release: DashboardRelease) => (
                 <div
                   key={release.id}
                   className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
@@ -241,9 +271,7 @@ export default async function DashboardPage() {
 
         <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
           <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-xl font-semibold text-white">
-              Letzte Kommentare
-            </h2>
+            <h2 className="text-xl font-semibold text-white">Letzte Kommentare</h2>
 
             <Link
               href="/dashboard/comments"
@@ -253,13 +281,13 @@ export default async function DashboardPage() {
             </Link>
           </div>
 
-          {latestComments.length === 0 ? (
+          {typedLatestComments.length === 0 ? (
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-sm text-zinc-400">
               Noch keine Kommentare vorhanden.
             </div>
           ) : (
             <div className="space-y-4">
-              {latestComments.map((comment) => {
+              {typedLatestComments.map((comment: DashboardComment) => {
                 const author =
                   comment.user.username ||
                   comment.user.name ||
@@ -311,13 +339,13 @@ export default async function DashboardPage() {
           </Link>
         </div>
 
-        {recentUsers.length === 0 ? (
+        {typedRecentUsers.length === 0 ? (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-sm text-zinc-400">
             Noch keine Benutzer vorhanden.
           </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            {recentUsers.map((user) => {
+            {typedRecentUsers.map((user: DashboardUser) => {
               const displayName =
                 user.username || user.name || user.email || "Unbekannt";
 
