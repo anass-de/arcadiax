@@ -1,8 +1,7 @@
-import { promises as fs } from "fs";
-import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
+import { createClient } from "@supabase/supabase-js";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -38,9 +37,7 @@ type AdminSessionUser = {
 function getSessionUser(
   session: Awaited<ReturnType<typeof getServerSession>>
 ): SessionUser | null {
-  if (!session) {
-    return null;
-  }
+  if (!session) return null;
 
   const maybeSession = session as { user?: unknown };
 
@@ -51,14 +48,14 @@ function getSessionUser(
   return maybeSession.user as SessionUser;
 }
 
-async function requireAdmin() {
+async function requireAdmin(request: NextRequest) {
   const session = await getServerSession(authOptions);
   const user = getSessionUser(session);
 
   if (!user?.id || user.role !== "ADMIN") {
     return {
       ok: false as const,
-      response: NextResponse.redirect(new URL("/login", "http://localhost")),
+      response: NextResponse.redirect(new URL("/login", request.url), 303),
     };
   }
 
@@ -73,9 +70,22 @@ function normalizeOptionalText(value: FormDataEntryValue | null) {
   return text ? text : null;
 }
 
+function slugify(value: string) {
+  return (
+    value
+      .normalize("NFKD")
+      .replace(/[^\w\s-]+/g, "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "release"
+  );
+}
+
 function sanitizeFileName(fileName: string) {
-  const ext = path.extname(fileName).toLowerCase();
-  const base = path.basename(fileName, ext);
+  const lastDot = fileName.lastIndexOf(".");
+  const base = lastDot >= 0 ? fileName.slice(0, lastDot) : fileName;
+  const ext = lastDot >= 0 ? fileName.slice(lastDot).toLowerCase() : "";
 
   const safeBase =
     base
@@ -90,52 +100,26 @@ function sanitizeFileName(fileName: string) {
   return `${safeBase}${safeExt}`;
 }
 
-function slugify(value: string) {
-  return (
-    value
-      .normalize("NFKD")
-      .replace(/[^\w\s-]+/g, "")
-      .trim()
-      .toLowerCase()
-      .replace(/[\s_-]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "release"
-  );
+function getStorageBucket() {
+  return process.env.SUPABASE_STORAGE_BUCKET || "arcadiax";
 }
 
-async function ensureDir(dirPath: string) {
-  await fs.mkdir(dirPath, { recursive: true });
-}
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-async function saveUploadedFile(
-  file: File,
-  targetDir: string,
-  publicBasePath: string
-) {
-  await ensureDir(targetDir);
-
-  const safeName = sanitizeFileName(file.name);
-  const finalName = `${Date.now()}-${safeName}`;
-  const finalPath = path.join(targetDir, finalName);
-
-  const bytes = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(finalPath, bytes);
-
-  return {
-    absolutePath: finalPath,
-    publicUrl: `${publicBasePath}/${finalName}`,
-  };
-}
-
-async function deleteFileIfExists(absolutePath: string | null) {
-  if (!absolutePath) {
-    return;
+  if (!url || !serviceRoleKey) {
+    throw new Error(
+      "Supabase ist nicht korrekt konfiguriert. NEXT_PUBLIC_SUPABASE_URL oder SUPABASE_SERVICE_ROLE_KEY fehlt."
+    );
   }
 
-  try {
-    await fs.unlink(absolutePath);
-  } catch {
-    // absichtlich ignorieren
-  }
+  return createClient(url, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
 }
 
 async function createUniqueSlug(baseSlug: string) {
@@ -157,6 +141,50 @@ async function createUniqueSlug(baseSlug: string) {
   }
 }
 
+async function uploadFileToStorage(args: {
+  file: File;
+  folder: string;
+  fileNamePrefix: string;
+}) {
+  const supabase = getSupabaseAdmin();
+  const bucket = getStorageBucket();
+
+  const buffer = Buffer.from(await args.file.arrayBuffer());
+  const safeOriginalName = sanitizeFileName(args.file.name);
+  const filePath = `${args.folder}/${Date.now()}-${args.fileNamePrefix}-${safeOriginalName}`;
+
+  const { error } = await supabase.storage.from(bucket).upload(filePath, buffer, {
+    contentType: args.file.type || "application/octet-stream",
+    upsert: false,
+  });
+
+  if (error) {
+    throw new Error(`Upload fehlgeschlagen: ${error.message}`);
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(bucket).getPublicUrl(filePath);
+
+  return {
+    filePath,
+    publicUrl,
+  };
+}
+
+async function removeFilesFromStorage(filePaths: string[]) {
+  if (filePaths.length === 0) return;
+
+  const supabase = getSupabaseAdmin();
+  const bucket = getStorageBucket();
+
+  const { error } = await supabase.storage.from(bucket).remove(filePaths);
+
+  if (error) {
+    console.error("Konnte Dateien aus Supabase Storage nicht löschen:", error.message);
+  }
+}
+
 function redirectToNewWithSuccess(request: NextRequest, message: string) {
   const url = new URL("/dashboard/releases/new", request.url);
   url.searchParams.set("success", message);
@@ -170,15 +198,13 @@ function redirectToNewWithError(request: NextRequest, message: string) {
 }
 
 export async function POST(request: NextRequest) {
-  let savedImagePath: string | null = null;
-  let savedFilePath: string | null = null;
+  const uploadedPaths: string[] = [];
 
   try {
-    const auth = await requireAdmin();
+    const auth = await requireAdmin(request);
 
     if (!auth.ok) {
-      const url = new URL("/login", request.url);
-      return NextResponse.redirect(url, 303);
+      return auth.response;
     }
 
     const userId = auth.user.id;
@@ -243,31 +269,29 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const uploadsRoot = path.join(process.cwd(), "public", "uploads", "releases");
-    const filesDir = path.join(uploadsRoot, "files");
-    const imagesDir = path.join(uploadsRoot, "images");
+    const baseSlug = slugify(slugInput || title);
+    const uniqueSlug = await createUniqueSlug(baseSlug);
+    const baseFolder = `releases/${uniqueSlug}`;
 
-    const savedReleaseFile = await saveUploadedFile(
-      fileEntry,
-      filesDir,
-      "/uploads/releases/files"
-    );
-    savedFilePath = savedReleaseFile.absolutePath;
+    const uploadedReleaseFile = await uploadFileToStorage({
+      file: fileEntry,
+      folder: `${baseFolder}/files`,
+      fileNamePrefix: "release",
+    });
+    uploadedPaths.push(uploadedReleaseFile.filePath);
 
     let imageUrl: string | null = null;
 
     if (imageFile) {
-      const savedImage = await saveUploadedFile(
-        imageFile,
-        imagesDir,
-        "/uploads/releases/images"
-      );
-      savedImagePath = savedImage.absolutePath;
-      imageUrl = savedImage.publicUrl;
-    }
+      const uploadedImage = await uploadFileToStorage({
+        file: imageFile,
+        folder: `${baseFolder}/images`,
+        fileNamePrefix: "image",
+      });
 
-    const baseSlug = slugify(slugInput || title);
-    const uniqueSlug = await createUniqueSlug(baseSlug);
+      uploadedPaths.push(uploadedImage.filePath);
+      imageUrl = uploadedImage.publicUrl;
+    }
 
     const createdRelease = await prisma.release.create({
       data: {
@@ -276,7 +300,7 @@ export async function POST(request: NextRequest) {
         slug: uniqueSlug,
         description,
         changelog,
-        fileUrl: savedReleaseFile.publicUrl,
+        fileUrl: uploadedReleaseFile.publicUrl,
         imageUrl,
         status: statusRaw as "DRAFT" | "PUBLISHED",
         authorId: userId,
@@ -304,8 +328,7 @@ export async function POST(request: NextRequest) {
         : "Release wurde erfolgreich als Entwurf gespeichert."
     );
   } catch (error) {
-    await deleteFileIfExists(savedImagePath);
-    await deleteFileIfExists(savedFilePath);
+    await removeFilesFromStorage(uploadedPaths);
 
     console.error("POST /api/admin/releases error:", error);
 
