@@ -1,11 +1,29 @@
+// src/app/dashboard/releases/new/page.tsx
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { FileText, ImageIcon, Lightbulb, Plus, Shield, Upload } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  FileText,
+  ImageIcon,
+  Lightbulb,
+  Plus,
+  Shield,
+  Upload,
+} from "lucide-react";
 
 import { authOptions } from "@/lib/auth";
 
-export default async function NewReleasePage() {
+type PageProps = {
+  searchParams?: Promise<{
+    error?: string;
+    success?: string;
+  }>;
+};
+
+export default async function NewReleasePage({ searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
@@ -15,6 +33,10 @@ export default async function NewReleasePage() {
   if (session.user.role !== "ADMIN") {
     redirect("/");
   }
+
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const errorMessage = resolvedSearchParams.error ?? null;
+  const successMessage = resolvedSearchParams.success ?? null;
 
   return (
     <div className="space-y-6">
@@ -38,6 +60,26 @@ export default async function NewReleasePage() {
           </div>
         </div>
       </section>
+
+      {errorMessage ? (
+        <div className="flex items-start gap-3 rounded-[24px] border border-red-500/20 bg-red-500/10 p-4 text-red-100">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-300" />
+          <div>
+            <div className="font-semibold">Erstellen fehlgeschlagen</div>
+            <p className="mt-1 text-sm text-red-100/90">{errorMessage}</p>
+          </div>
+        </div>
+      ) : null}
+
+      {successMessage ? (
+        <div className="flex items-start gap-3 rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-100">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+          <div>
+            <div className="font-semibold">Erfolgreich erstellt</div>
+            <p className="mt-1 text-sm text-emerald-100/90">{successMessage}</p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
@@ -109,7 +151,7 @@ export default async function NewReleasePage() {
                 </label>
                 <select
                   name="status"
-                  defaultValue="DRAFT"
+                  defaultValue="PUBLISHED"
                   className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-white outline-none"
                 >
                   <option value="DRAFT">DRAFT</option>
@@ -221,8 +263,8 @@ export default async function NewReleasePage() {
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-[#07090f] p-5">
-                Setze den Status zunächst auf <span className="text-white">DRAFT</span>,
-                wenn du das Release erst intern vorbereiten möchtest.
+                Setze den Status auf <span className="text-white">PUBLISHED</span>,
+                wenn das Release direkt auf der Website erscheinen soll.
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-[#07090f] p-5">

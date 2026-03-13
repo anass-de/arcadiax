@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -57,7 +58,7 @@ async function requireAdmin() {
   if (!user?.id || user.role !== "ADMIN") {
     return {
       ok: false as const,
-      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      response: NextResponse.redirect(new URL("/login", "http://localhost")),
     };
   }
 
@@ -156,18 +157,16 @@ async function createUniqueSlug(baseSlug: string) {
   }
 }
 
-function redirectWithStatus(request: NextRequest, status: string) {
-  return NextResponse.redirect(
-    new URL(`/dashboard/releases?status=${status}`, request.url),
-    303
-  );
+function redirectToNewWithSuccess(request: NextRequest, message: string) {
+  const url = new URL("/dashboard/releases/new", request.url);
+  url.searchParams.set("success", message);
+  return NextResponse.redirect(url, 303);
 }
 
-function redirectWithError(request: NextRequest, error: string) {
-  return NextResponse.redirect(
-    new URL(`/dashboard/releases/new?error=${error}`, request.url),
-    303
-  );
+function redirectToNewWithError(request: NextRequest, message: string) {
+  const url = new URL("/dashboard/releases/new", request.url);
+  url.searchParams.set("error", message);
+  return NextResponse.redirect(url, 303);
 }
 
 export async function POST(request: NextRequest) {
@@ -178,7 +177,8 @@ export async function POST(request: NextRequest) {
     const auth = await requireAdmin();
 
     if (!auth.ok) {
-      return auth.response;
+      const url = new URL("/login", request.url);
+      return NextResponse.redirect(url, 303);
     }
 
     const userId = auth.user.id;
@@ -189,30 +189,36 @@ export async function POST(request: NextRequest) {
     const slugInput = String(formData.get("slug") ?? "").trim();
     const description = normalizeOptionalText(formData.get("description"));
     const changelog = normalizeOptionalText(formData.get("changelog"));
-    const statusRaw = String(formData.get("status") ?? "DRAFT")
+    const statusRaw = String(formData.get("status") ?? "PUBLISHED")
       .trim()
       .toUpperCase();
 
     if (!title) {
-      return redirectWithError(request, "missing_title");
+      return redirectToNewWithError(request, "Titel darf nicht leer sein.");
     }
 
     if (!version) {
-      return redirectWithError(request, "missing_version");
+      return redirectToNewWithError(request, "Version darf nicht leer sein.");
     }
 
     if (statusRaw !== "DRAFT" && statusRaw !== "PUBLISHED") {
-      return redirectWithError(request, "invalid_status");
+      return redirectToNewWithError(request, "Ungültiger Status.");
     }
 
     const fileEntry = formData.get("file");
 
     if (!(fileEntry instanceof File) || fileEntry.size <= 0) {
-      return redirectWithError(request, "missing_file");
+      return redirectToNewWithError(
+        request,
+        "Bitte wähle eine Release-Datei aus."
+      );
     }
 
     if (fileEntry.size > MAX_FILE_SIZE) {
-      return redirectWithError(request, "file_too_large");
+      return redirectToNewWithError(
+        request,
+        "Die Release-Datei ist zu groß. Maximal erlaubt sind 1 GB."
+      );
     }
 
     const imageEntry = formData.get("image");
@@ -223,11 +229,17 @@ export async function POST(request: NextRequest) {
       const imageMime = imageFile.type?.trim();
 
       if (!imageMime || !IMAGE_MIME_TYPES.has(imageMime)) {
-        return redirectWithError(request, "invalid_image_type");
+        return redirectToNewWithError(
+          request,
+          "Ungültiges Bildformat. Erlaubt sind JPG, PNG, WEBP, GIF, AVIF und SVG."
+        );
       }
 
       if (imageFile.size > MAX_IMAGE_SIZE) {
-        return redirectWithError(request, "image_too_large");
+        return redirectToNewWithError(
+          request,
+          "Das Bild ist zu groß. Maximal erlaubt sind 10 MB."
+        );
       }
     }
 
@@ -257,7 +269,7 @@ export async function POST(request: NextRequest) {
     const baseSlug = slugify(slugInput || title);
     const uniqueSlug = await createUniqueSlug(baseSlug);
 
-    await prisma.release.create({
+    const createdRelease = await prisma.release.create({
       data: {
         title,
         version,
@@ -266,18 +278,40 @@ export async function POST(request: NextRequest) {
         changelog,
         fileUrl: savedReleaseFile.publicUrl,
         imageUrl,
-        status: statusRaw,
+        status: statusRaw as "DRAFT" | "PUBLISHED",
         authorId: userId,
+      },
+      select: {
+        id: true,
+        slug: true,
+        status: true,
       },
     });
 
-    return redirectWithStatus(request, "created");
+    revalidatePath("/");
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/releases");
+    revalidatePath("/dashboard/releases/new");
+    revalidatePath("/releases");
+    revalidatePath(`/releases/${createdRelease.slug}`);
+    revalidatePath(`/dashboard/releases/${createdRelease.id}`);
+    revalidatePath(`/dashboard/releases/${createdRelease.id}/edit`);
+
+    return redirectToNewWithSuccess(
+      request,
+      createdRelease.status === "PUBLISHED"
+        ? "Release wurde erfolgreich erstellt und veröffentlicht."
+        : "Release wurde erfolgreich als Entwurf gespeichert."
+    );
   } catch (error) {
     await deleteFileIfExists(savedImagePath);
     await deleteFileIfExists(savedFilePath);
 
     console.error("POST /api/admin/releases error:", error);
 
-    return redirectWithError(request, "create_failed");
+    return redirectToNewWithError(
+      request,
+      "Beim Erstellen des Releases ist ein Fehler aufgetreten."
+    );
   }
 }
