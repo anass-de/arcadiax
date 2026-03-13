@@ -16,6 +16,25 @@ import {
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 
+type ReleaseStatus = "DRAFT" | "PUBLISHED";
+
+type ReleaseRow = {
+  id: string;
+  title: string;
+  slug: string | null;
+  version: string;
+  description: string | null;
+  fileUrl: string;
+  imageUrl: string | null;
+  downloadCount: number;
+  status: ReleaseStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  _count: {
+    comments: number;
+  };
+};
+
 function formatDateTime(date: Date) {
   return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
@@ -42,7 +61,7 @@ function getReleaseHref(release: {
   return `/releases/${release.id}`;
 }
 
-function getStatusClasses(status: string) {
+function getStatusClasses(status: ReleaseStatus) {
   if (status === "PUBLISHED") {
     return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
   }
@@ -61,7 +80,7 @@ export default async function DashboardReleasesPage() {
     redirect("/");
   }
 
-  const releases = await prisma.release.findMany({
+  const releases: ReleaseRow[] = await prisma.release.findMany({
     orderBy: {
       createdAt: "desc",
     },
@@ -87,13 +106,13 @@ export default async function DashboardReleasesPage() {
 
   const totalReleases = releases.length;
   const publishedReleases = releases.filter(
-    (release) => release.status === "PUBLISHED"
+    (release: ReleaseRow) => release.status === "PUBLISHED"
   ).length;
   const draftReleases = releases.filter(
-    (release) => release.status === "DRAFT"
+    (release: ReleaseRow) => release.status === "DRAFT"
   ).length;
   const totalDownloads = releases.reduce(
-    (sum, release) => sum + (release.downloadCount ?? 0),
+    (sum: number, release: ReleaseRow) => sum + (release.downloadCount ?? 0),
     0
   );
 
@@ -342,7 +361,7 @@ export default async function DashboardReleasesPage() {
               </thead>
 
               <tbody>
-                {releases.map((release) => {
+                {releases.map((release: ReleaseRow) => {
                   const releaseHref = getReleaseHref(release);
 
                   return (
