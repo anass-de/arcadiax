@@ -18,6 +18,19 @@ import {
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+type HomeMediaRow = {
+  id: string;
+  type: "IMAGE" | "VIDEO";
+  title: string | null;
+  description: string | null;
+  url: string;
+  sortOrder: number;
+  active: boolean;
+  authorId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 function getPrimaryAction(role?: string | null) {
   if (role === "ADMIN") {
     return {
@@ -73,7 +86,7 @@ export default async function HomePage() {
   const secondaryAction = getSecondaryAction(role);
   const PrimaryIcon = primaryAction.icon;
 
-  const latestVideos = await prisma.homeMedia.findMany({
+  const latestVideos: HomeMediaRow[] = await prisma.homeMedia.findMany({
     where: {
       active: true,
       type: "VIDEO",
@@ -82,7 +95,7 @@ export default async function HomePage() {
     take: 3,
   });
 
-  const latestPhotos = await prisma.homeMedia.findMany({
+  const latestPhotos: HomeMediaRow[] = await prisma.homeMedia.findMany({
     where: {
       active: true,
       type: "IMAGE",
@@ -306,7 +319,7 @@ export default async function HomePage() {
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {latestVideos.map((item) => (
+            {latestVideos.map((item: HomeMediaRow) => (
               <article
                 key={item.id}
                 className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07090f] transition hover:border-blue-400/20"
@@ -388,7 +401,7 @@ export default async function HomePage() {
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {latestPhotos.map((item) => (
+            {latestPhotos.map((item: HomeMediaRow) => (
               <article
                 key={item.id}
                 className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07090f] transition hover:border-blue-400/20"
