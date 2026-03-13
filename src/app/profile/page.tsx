@@ -5,6 +5,23 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+type ProfileComment = {
+  id: string;
+  content: string;
+  createdAt: Date;
+  release: {
+    id: string;
+    title: string;
+    slug: string;
+  };
+};
+
+type ProfileUser = {
+  username: string | null;
+  email: string | null;
+  comments: ProfileComment[];
+};
+
 export default async function ProfilePage() {
   const session = await getServerSession(authOptions);
 
@@ -12,7 +29,7 @@ export default async function ProfilePage() {
     redirect("/login");
   }
 
-  const user = await prisma.user.findUnique({
+  const user: ProfileUser | null = await prisma.user.findUnique({
     where: {
       email: session.user.email,
     },
@@ -89,7 +106,7 @@ export default async function ProfilePage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {user.comments.map((comment) => (
+                {user.comments.map((comment: ProfileComment) => (
                   <div
                     key={comment.id}
                     className="rounded-xl border border-white/10 bg-white/[0.03] p-4"
