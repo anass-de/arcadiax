@@ -262,7 +262,6 @@ export async function POST(request: NextRequest) {
 
     const title = normalizeOptionalText(formData.get("title"));
     const description = normalizeOptionalText(formData.get("description"));
-    const altText = normalizeOptionalText(formData.get("altText"));
     const sortOrder = parseSortOrder(formData.get("sortOrder"));
     const active = parseBoolean(formData.get("active"));
 
@@ -323,7 +322,6 @@ export async function POST(request: NextRequest) {
         type: detectedType,
         title,
         description,
-        altText,
         url: uploaded.publicUrl,
         sortOrder,
         active,
