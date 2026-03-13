@@ -2,9 +2,6 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import {
   Crown,
-  ImageIcon,
-  MessageSquare,
-  Package,
   Search,
   Shield,
   User as UserIcon,
@@ -26,6 +23,36 @@ type SearchParams = Promise<{
 
 type PageProps = {
   searchParams: SearchParams;
+};
+
+type UserRole = "ADMIN" | "USER";
+
+type UserRow = {
+  id: string;
+  role: UserRole;
+  username: string | null;
+  name: string | null;
+  email: string | null;
+  createdAt: Date;
+  _count: {
+    comments: number;
+    releases: number;
+    mediaItems: number;
+  };
+};
+
+type PreparedUser = {
+  id: string;
+  role: UserRole;
+  username: string | null;
+  name: string | null;
+  email: string | null;
+  createdAtLabel: string;
+  displayName: string;
+  commentCount: number;
+  releaseCount: number;
+  mediaCount: number;
+  isSelf: boolean;
 };
 
 function formatDate(date: Date) {
@@ -101,7 +128,7 @@ export default async function DashboardUsersPage({
       name?: { contains: string; mode: "insensitive" };
       email?: { contains: string; mode: "insensitive" };
     }>;
-    role?: "ADMIN" | "USER";
+    role?: UserRole;
   } = {};
 
   if (q) {
@@ -139,10 +166,12 @@ export default async function DashboardUsersPage({
     }),
   ]);
 
+  const typedUsers: UserRow[] = users;
+
   const statusMessage = getStatusMessage(params.status);
   const errorMessage = getErrorMessage(params.error);
 
-  const preparedUsers = users.map((user) => ({
+  const preparedUsers: PreparedUser[] = typedUsers.map((user: UserRow) => ({
     id: user.id,
     role: user.role,
     username: user.username,
