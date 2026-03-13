@@ -11,6 +11,19 @@ type SearchParams = Promise<{
   page?: string;
 }>;
 
+type VideoItem = {
+  id: string;
+  type: "IMAGE" | "VIDEO";
+  title: string | null;
+  description: string | null;
+  url: string;
+  sortOrder: number;
+  active: boolean;
+  authorId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 function parsePage(value?: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 1) return 1;
@@ -83,7 +96,7 @@ export default async function VideosPage(props: {
   const safePage = Math.min(currentPage, totalPages);
   const skip = (safePage - 1) * PAGE_SIZE;
 
-  const videos = await prisma.homeMedia.findMany({
+  const videos: VideoItem[] = await prisma.homeMedia.findMany({
     where: {
       active: true,
       type: "VIDEO",
@@ -130,7 +143,7 @@ export default async function VideosPage(props: {
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {videos.map((item) => (
+          {videos.map((item: VideoItem) => (
             <article
               key={item.id}
               className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] transition hover:border-blue-400/20 hover:bg-white/[0.05]"
