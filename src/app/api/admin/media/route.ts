@@ -1,7 +1,6 @@
-import { promises as fs } from "fs";
-import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { createClient } from "@supabase/supabase-js";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -17,6 +16,7 @@ const IMAGE_MIME_TYPES = new Set([
   "image/webp",
   "image/gif",
   "image/avif",
+  "image/svg+xml",
 ]);
 
 const VIDEO_MIME_TYPES = new Set([
@@ -51,123 +51,6 @@ function getSessionUser(
   return maybeSession.user as SessionUser;
 }
 
-function sanitizeFileName(fileName: string) {
-  const ext = path.extname(fileName).toLowerCase();
-  const base = path.basename(fileName, ext);
-
-  const safeBase =
-    base
-      .normalize("NFKD")
-      .replace(/[^\w.-]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 80) || "file";
-
-  const safeExt = ext.replace(/[^\w.]+/g, "");
-
-  return `${safeBase}${safeExt}`;
-}
-
-function parseBoolean(value: FormDataEntryValue | null) {
-  return value === "true" || value === "on" || value === "1";
-}
-
-function parseSortOrder(value: FormDataEntryValue | null) {
-  const raw = String(value ?? "").trim();
-  const parsed = Number(raw);
-
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return 0;
-  }
-
-  return Math.floor(parsed);
-}
-
-function normalizeOptionalText(value: FormDataEntryValue | null) {
-  const text = String(value ?? "").trim();
-  return text ? text : null;
-}
-
-function validateType(type: string): type is MediaType {
-  return type === "IMAGE" || type === "VIDEO";
-}
-
-function ensureMimeMatchesType(type: MediaType, mimeType: string) {
-  if (type === "IMAGE") {
-    return IMAGE_MIME_TYPES.has(mimeType);
-  }
-
-  return VIDEO_MIME_TYPES.has(mimeType);
-}
-
-function getMaxSizeForType(type: MediaType) {
-  return type === "IMAGE" ? MAX_IMAGE_SIZE : MAX_VIDEO_SIZE;
-}
-
-function getUploadSubfolder(type: MediaType) {
-  return type === "IMAGE" ? "images" : "videos";
-}
-
-async function ensureDir(dirPath: string) {
-  await fs.mkdir(dirPath, { recursive: true });
-}
-
-async function saveUploadedFile(file: File, type: MediaType) {
-  const uploadsRoot = path.join(process.cwd(), "public", "uploads");
-  const subfolder = getUploadSubfolder(type);
-  const targetDir = path.join(uploadsRoot, subfolder);
-
-  await ensureDir(targetDir);
-
-  const safeName = sanitizeFileName(file.name);
-  const finalName = `${Date.now()}-${safeName}`;
-  const finalPath = path.join(targetDir, finalName);
-
-  const bytes = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(finalPath, bytes);
-
-  return {
-    absolutePath: finalPath,
-    publicUrl: `/uploads/${subfolder}/${finalName}`,
-  };
-}
-
-function isLocalUploadUrl(url: string | null | undefined) {
-  return Boolean(url && url.startsWith("/uploads/"));
-}
-
-function getAbsolutePathFromPublicUrl(url: string | null | undefined) {
-  if (!url || !isLocalUploadUrl(url)) {
-    return null;
-  }
-
-  const relativePath = url.replace(/^\/+/, "");
-  const normalized = path.normalize(relativePath);
-
-  if (!normalized || normalized.startsWith("..") || path.isAbsolute(normalized)) {
-    return null;
-  }
-
-  return path.join(process.cwd(), "public", normalized);
-}
-
-async function deleteFileIfExists(absolutePath: string | null) {
-  if (!absolutePath) {
-    return;
-  }
-
-  try {
-    await fs.unlink(absolutePath);
-  } catch {
-    // absichtlich ignorieren
-  }
-}
-
-async function deleteFileByPublicUrlIfLocal(url: string | null | undefined) {
-  const absolutePath = getAbsolutePathFromPublicUrl(url);
-  await deleteFileIfExists(absolutePath);
-}
-
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   const user = getSessionUser(session);
@@ -185,6 +68,152 @@ async function requireAdmin() {
   };
 }
 
+function normalizeOptionalText(value: FormDataEntryValue | null) {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+function parseBoolean(value: FormDataEntryValue | null) {
+  return value === "true" || value === "on" || value === "1";
+}
+
+function parseSortOrder(value: FormDataEntryValue | null) {
+  const raw = String(value ?? "").trim();
+  const parsed = Number(raw);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+
+  return Math.floor(parsed);
+}
+
+function sanitizeFileName(fileName: string) {
+  const lastDot = fileName.lastIndexOf(".");
+  const base = lastDot >= 0 ? fileName.slice(0, lastDot) : fileName;
+  const ext = lastDot >= 0 ? fileName.slice(lastDot).toLowerCase() : "";
+
+  const safeBase =
+    base
+      .normalize("NFKD")
+      .replace(/[^\w.-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 80) || "file";
+
+  const safeExt = ext.replace(/[^\w.]+/g, "");
+
+  return `${safeBase}${safeExt}`;
+}
+
+function getStorageBucket() {
+  return process.env.SUPABASE_STORAGE_BUCKET || "arcadiax";
+}
+
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    throw new Error(
+      "Supabase ist nicht korrekt konfiguriert. NEXT_PUBLIC_SUPABASE_URL oder SUPABASE_SERVICE_ROLE_KEY fehlt."
+    );
+  }
+
+  return createClient(url, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+function detectMediaTypeFromMime(mimeType: string): MediaType | null {
+  if (IMAGE_MIME_TYPES.has(mimeType)) {
+    return "IMAGE";
+  }
+
+  if (VIDEO_MIME_TYPES.has(mimeType)) {
+    return "VIDEO";
+  }
+
+  return null;
+}
+
+function getMaxSizeForType(type: MediaType) {
+  return type === "IMAGE" ? MAX_IMAGE_SIZE : MAX_VIDEO_SIZE;
+}
+
+function extractStoragePathFromPublicUrl(publicUrl: string | null | undefined) {
+  if (!publicUrl) {
+    return null;
+  }
+
+  const bucket = getStorageBucket();
+
+  try {
+    const url = new URL(publicUrl);
+    const marker = `/storage/v1/object/public/${bucket}/`;
+    const index = url.pathname.indexOf(marker);
+
+    if (index === -1) {
+      return null;
+    }
+
+    return decodeURIComponent(url.pathname.slice(index + marker.length));
+  } catch {
+    return null;
+  }
+}
+
+async function removeFileFromStorageByPublicUrl(publicUrl: string | null | undefined) {
+  const filePath = extractStoragePathFromPublicUrl(publicUrl);
+
+  if (!filePath) {
+    return;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const bucket = getStorageBucket();
+
+  const { error } = await supabase.storage.from(bucket).remove([filePath]);
+
+  if (error) {
+    console.error("Konnte Datei aus Supabase Storage nicht löschen:", error.message);
+  }
+}
+
+async function uploadFileToStorage(args: {
+  file: File;
+  folder: string;
+  fileNamePrefix: string;
+}) {
+  const supabase = getSupabaseAdmin();
+  const bucket = getStorageBucket();
+
+  const buffer = Buffer.from(await args.file.arrayBuffer());
+  const safeOriginalName = sanitizeFileName(args.file.name);
+  const filePath = `${args.folder}/${Date.now()}-${args.fileNamePrefix}-${safeOriginalName}`;
+
+  const { error } = await supabase.storage.from(bucket).upload(filePath, buffer, {
+    contentType: args.file.type || "application/octet-stream",
+    upsert: false,
+  });
+
+  if (error) {
+    throw new Error(`Upload fehlgeschlagen: ${error.message}`);
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(bucket).getPublicUrl(filePath);
+
+  return {
+    filePath,
+    publicUrl,
+  };
+}
+
 export async function GET() {
   try {
     const auth = await requireAdmin();
@@ -194,10 +223,7 @@ export async function GET() {
     }
 
     const media = await prisma.homeMedia.findMany({
-      orderBy: [
-        { sortOrder: "asc" },
-        { createdAt: "desc" },
-      ],
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       include: {
         author: {
           select: {
@@ -222,7 +248,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  let savedAbsolutePath: string | null = null;
+  const uploadedPaths: string[] = [];
 
   try {
     const auth = await requireAdmin();
@@ -231,23 +257,12 @@ export async function POST(request: NextRequest) {
       return auth.response;
     }
 
-    const userId = auth.user.id;
+    const userId = auth.user.id!;
     const formData = await request.formData();
 
-    const typeRaw = String(formData.get("type") ?? "")
-      .trim()
-      .toUpperCase();
-
-    if (!validateType(typeRaw)) {
-      return NextResponse.json(
-        { error: "Ungültiger Medientyp." },
-        { status: 400 }
-      );
-    }
-
-    const type: MediaType = typeRaw;
     const title = normalizeOptionalText(formData.get("title"));
     const description = normalizeOptionalText(formData.get("description"));
+    const altText = normalizeOptionalText(formData.get("altText"));
     const sortOrder = parseSortOrder(formData.get("sortOrder"));
     const active = parseBoolean(formData.get("active"));
 
@@ -269,31 +284,47 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!ensureMimeMatchesType(type, mimeType)) {
+    const detectedType = detectMediaTypeFromMime(mimeType);
+
+    if (!detectedType) {
       return NextResponse.json(
-        { error: "Dateityp passt nicht zum ausgewählten Medientyp." },
+        { error: "Ungültiger Medientyp." },
         { status: 400 }
       );
     }
 
-    const maxSize = getMaxSizeForType(type);
+    const maxSize = getMaxSizeForType(detectedType);
 
     if (fileEntry.size > maxSize) {
       return NextResponse.json(
-        { error: "Datei ist zu groß." },
+        {
+          error:
+            detectedType === "IMAGE"
+              ? "Bild ist zu groß. Maximal erlaubt sind 10 MB."
+              : "Video ist zu groß. Maximal erlaubt sind 200 MB.",
+        },
         { status: 400 }
       );
     }
 
-    const saved = await saveUploadedFile(fileEntry, type);
-    savedAbsolutePath = saved.absolutePath;
+    const folder =
+      detectedType === "IMAGE" ? "media/images" : "media/videos";
+
+    const uploaded = await uploadFileToStorage({
+      file: fileEntry,
+      folder,
+      fileNamePrefix: detectedType.toLowerCase(),
+    });
+
+    uploadedPaths.push(uploaded.filePath);
 
     const media = await prisma.homeMedia.create({
       data: {
-        type,
+        type: detectedType,
         title,
         description,
-        url: saved.publicUrl,
+        altText,
+        url: uploaded.publicUrl,
         sortOrder,
         active,
         authorId: userId,
@@ -318,7 +349,22 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    await deleteFileIfExists(savedAbsolutePath);
+    if (uploadedPaths.length > 0) {
+      const supabase = getSupabaseAdmin();
+      const bucket = getStorageBucket();
+
+      const { error: removeError } = await supabase.storage
+        .from(bucket)
+        .remove(uploadedPaths);
+
+      if (removeError) {
+        console.error(
+          "Rollback in Supabase Storage fehlgeschlagen:",
+          removeError.message
+        );
+      }
+    }
+
     console.error("POST /api/admin/media error:", error);
 
     return NextResponse.json(
@@ -361,7 +407,7 @@ export async function DELETE(request: NextRequest) {
       where: { id },
     });
 
-    await deleteFileByPublicUrlIfLocal(existing.url);
+    await removeFileFromStorageByPublicUrl(existing.url);
 
     return NextResponse.json({
       ok: true,
