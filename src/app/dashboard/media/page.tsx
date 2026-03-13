@@ -15,55 +15,43 @@ import {
   X,
 } from "lucide-react";
 
-type MediaKind = "image" | "video" | "file";
+type MediaType = "IMAGE" | "VIDEO";
 
 type MediaItem = {
   id: string;
-  fileName: string;
-  originalName?: string | null;
   title?: string | null;
-  altText?: string | null;
+  description?: string | null;
   url: string;
-  mimeType?: string | null;
-  size?: number | null;
-  width?: number | null;
-  height?: number | null;
-  kind: MediaKind;
+  type: MediaType;
+  sortOrder?: number | null;
+  active: boolean;
   createdAt: string;
   updatedAt?: string;
+  author?: {
+    id: string;
+    name?: string | null;
+    username?: string | null;
+    email?: string | null;
+  } | null;
 };
 
 type MediaListResponse = {
-  items: MediaItem[];
+  media: MediaItem[];
 };
 
 type UploadResponse = {
   ok: boolean;
-  item?: MediaItem;
+  media?: MediaItem;
   error?: string;
 };
 
 type DeleteResponse = {
   ok: boolean;
+  deletedId?: string;
   error?: string;
 };
 
-type FilterKind = "all" | MediaKind;
-
-function formatBytes(bytes?: number | null) {
-  if (!bytes || Number.isNaN(bytes)) return "—";
-
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-}
+type FilterKind = "all" | "IMAGE" | "VIDEO";
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -76,38 +64,50 @@ function formatDate(value: string) {
   }).format(date);
 }
 
-function getKindLabel(kind: MediaKind) {
+function getKindLabel(kind: MediaType) {
   switch (kind) {
-    case "image":
+    case "IMAGE":
       return "Bild";
-    case "video":
+    case "VIDEO":
       return "Video";
-    case "file":
-      return "Datei";
     default:
       return kind;
   }
 }
 
-function getKindIcon(kind: MediaKind) {
+function getKindIcon(kind: MediaType) {
   switch (kind) {
-    case "image":
+    case "IMAGE":
       return <FileImage className="h-4 w-4" />;
-    case "video":
+    case "VIDEO":
       return <Film className="h-4 w-4" />;
-    case "file":
-      return <File className="h-4 w-4" />;
     default:
       return <File className="h-4 w-4" />;
   }
 }
 
 function isImage(item: MediaItem) {
-  return item.kind === "image";
+  return item.type === "IMAGE";
 }
 
 function isVideo(item: MediaItem) {
-  return item.kind === "video";
+  return item.type === "VIDEO";
+}
+
+function getDisplayTitle(item: MediaItem) {
+  if (item.title?.trim()) return item.title.trim();
+
+  const parts = item.url.split("/");
+  const fileName = parts[parts.length - 1] || "Datei";
+
+  return decodeURIComponent(fileName);
+}
+
+function getDisplayFileName(item: MediaItem) {
+  const parts = item.url.split("/");
+  const fileName = parts[parts.length - 1] || item.id;
+
+  return decodeURIComponent(fileName);
 }
 
 export default function DashboardMediaPage() {
@@ -120,7 +120,7 @@ export default function DashboardMediaPage() {
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
-  const [uploadAltText, setUploadAltText] = useState("");
+  const [uploadDescription, setUploadDescription] = useState("");
   const [uploading, setUploading] = useState(false);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -146,17 +146,22 @@ export default function DashboardMediaPage() {
       const data = (await response.json()) as MediaListResponse | { error?: string };
 
       if (!response.ok) {
-        throw new Error(data && "error" in data && data.error ? data.error : "Medien konnten nicht geladen werden.");
+        throw new Error(
+          data && "error" in data && data.error
+            ? data.error
+            : "Medien konnten nicht geladen werden.",
+        );
       }
 
-      const items = Array.isArray((data as MediaListResponse).items)
-        ? (data as MediaListResponse).items
-        : [];
+      const items =
+        data && "media" in data && Array.isArray(data.media) ? data.media : [];
 
       setMediaItems(items);
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Unbekannter Fehler beim Laden der Medien.",
+        error instanceof Error
+          ? error.message
+          : "Unbekannter Fehler beim Laden der Medien.",
       );
     } finally {
       setLoading(false);
@@ -172,14 +177,16 @@ export default function DashboardMediaPage() {
     const normalizedQuery = query.trim().toLowerCase();
 
     return mediaItems.filter((item: MediaItem) => {
-      const matchesKind = filterKind === "all" ? true : item.kind === filterKind;
+      const matchesKind = filterKind === "all" ? true : item.type === filterKind;
 
       const haystack = [
-        item.fileName,
-        item.originalName ?? "",
-        item.title ?? "",
-        item.altText ?? "",
-        item.mimeType ?? "",
+        getDisplayTitle(item),
+        getDisplayFileName(item),
+        item.description ?? "",
+        item.url,
+        item.author?.name ?? "",
+        item.author?.username ?? "",
+        item.author?.email ?? "",
       ]
         .join(" ")
         .toLowerCase();
@@ -211,9 +218,12 @@ export default function DashboardMediaPage() {
         formData.append("title", uploadTitle.trim());
       }
 
-      if (uploadAltText.trim()) {
-        formData.append("altText", uploadAltText.trim());
+      if (uploadDescription.trim()) {
+        formData.append("description", uploadDescription.trim());
       }
+
+      formData.append("sortOrder", "0");
+      formData.append("active", "true");
 
       const response = await fetch("/api/admin/media", {
         method: "POST",
@@ -222,24 +232,28 @@ export default function DashboardMediaPage() {
 
       const data = (await response.json()) as UploadResponse;
 
-      if (!response.ok || !data.ok || !data.item) {
+      if (!response.ok || !data.ok || !data.media) {
         throw new Error(data.error || "Upload fehlgeschlagen.");
       }
 
-      setMediaItems((current: MediaItem[]) => [data.item as MediaItem, ...current]);
+      setMediaItems((current: MediaItem[]) => [data.media as MediaItem, ...current]);
       setSelectedFile(null);
       setUploadTitle("");
-      setUploadAltText("");
-      setSuccessMessage("Datei erfolgreich hochgeladen.");
+      setUploadDescription("");
+      setSuccessMessage("Medium erfolgreich hochgeladen.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Upload fehlgeschlagen.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Upload fehlgeschlagen.",
+      );
     } finally {
       setUploading(false);
     }
   }
 
   async function handleDelete(item: MediaItem) {
-    const confirmed = window.confirm(`Möchtest du "${item.originalName || item.fileName}" wirklich löschen?`);
+    const confirmed = window.confirm(
+      `Möchtest du "${getDisplayTitle(item)}" wirklich löschen?`,
+    );
 
     if (!confirmed) return;
 
@@ -248,9 +262,12 @@ export default function DashboardMediaPage() {
       setErrorMessage(null);
       setSuccessMessage(null);
 
-      const response = await fetch(`/api/admin/media?id=${encodeURIComponent(item.id)}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(
+        `/api/admin/media?id=${encodeURIComponent(item.id)}`,
+        {
+          method: "DELETE",
+        },
+      );
 
       const data = (await response.json()) as DeleteResponse;
 
@@ -258,10 +275,14 @@ export default function DashboardMediaPage() {
         throw new Error(data.error || "Löschen fehlgeschlagen.");
       }
 
-      setMediaItems((current: MediaItem[]) => current.filter((entry: MediaItem) => entry.id !== item.id));
-      setSuccessMessage("Datei erfolgreich gelöscht.");
+      setMediaItems((current: MediaItem[]) =>
+        current.filter((entry: MediaItem) => entry.id !== item.id),
+      );
+      setSuccessMessage("Medium erfolgreich gelöscht.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Löschen fehlgeschlagen.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Löschen fehlgeschlagen.",
+      );
     } finally {
       setDeletingId(null);
     }
@@ -284,7 +305,7 @@ export default function DashboardMediaPage() {
               Media Library
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Verwalte Bilder, Videos und Dateien für ArcadiaX an einer Stelle.
+              Verwalte Bilder und Videos für ArcadiaX an einer Stelle.
             </p>
           </div>
 
@@ -322,7 +343,7 @@ export default function DashboardMediaPage() {
           <div className="mb-6">
             <h2 className="text-xl font-semibold text-white">Neues Medium hochladen</h2>
             <p className="mt-2 text-sm text-zinc-400">
-              Unterstützt Bilder, Videos und sonstige Dateien.
+              Lade ein Bild oder Video hoch. Der Typ wird automatisch erkannt.
             </p>
           </div>
 
@@ -334,12 +355,13 @@ export default function DashboardMediaPage() {
               <input
                 id="media-file"
                 type="file"
+                accept="image/*,video/*"
                 onChange={handleFileChange}
                 className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-200 file:mr-4 file:rounded-xl file:border-0 file:bg-fuchsia-500/20 file:px-4 file:py-2 file:text-sm file:font-medium file:text-fuchsia-100 hover:file:bg-fuchsia-500/30"
               />
               {selectedFile ? (
                 <p className="text-xs text-zinc-400">
-                  Ausgewählt: <span className="text-zinc-200">{selectedFile.name}</span> ({formatBytes(selectedFile.size)})
+                  Ausgewählt: <span className="text-zinc-200">{selectedFile.name}</span>
                 </p>
               ) : null}
             </div>
@@ -359,15 +381,18 @@ export default function DashboardMediaPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-zinc-200" htmlFor="media-alt">
-                Alt-Text
+              <label
+                className="block text-sm font-medium text-zinc-200"
+                htmlFor="media-description"
+              >
+                Beschreibung
               </label>
-              <input
-                id="media-alt"
-                type="text"
-                value={uploadAltText}
-                onChange={(event) => setUploadAltText(event.target.value)}
-                placeholder="Optional für Bilder"
+              <textarea
+                id="media-description"
+                value={uploadDescription}
+                onChange={(event) => setUploadDescription(event.target.value)}
+                placeholder="Optionale Beschreibung"
+                rows={4}
                 className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-fuchsia-400/40"
               />
             </div>
@@ -429,9 +454,8 @@ export default function DashboardMediaPage() {
                 className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none focus:border-fuchsia-400/40"
               >
                 <option value="all">Alle Typen</option>
-                <option value="image">Bilder</option>
-                <option value="video">Videos</option>
-                <option value="file">Dateien</option>
+                <option value="IMAGE">Bilder</option>
+                <option value="VIDEO">Videos</option>
               </select>
             </div>
           </div>
@@ -464,7 +488,7 @@ export default function DashboardMediaPage() {
                     {isImage(item) ? (
                       <Image
                         src={item.url}
-                        alt={item.altText || item.title || item.originalName || item.fileName}
+                        alt={item.title || getDisplayFileName(item)}
                         fill
                         className="object-cover"
                         sizes="(max-width: 768px) 100vw, (max-width: 1536px) 50vw, 33vw"
@@ -484,28 +508,38 @@ export default function DashboardMediaPage() {
                     )}
 
                     <div className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur">
-                      {getKindIcon(item.kind)}
-                      {getKindLabel(item.kind)}
+                      {getKindIcon(item.type)}
+                      {getKindLabel(item.type)}
                     </div>
                   </div>
 
                   <div className="space-y-4 p-4">
                     <div className="space-y-2">
                       <h3 className="line-clamp-1 text-base font-semibold text-white">
-                        {item.title || item.originalName || item.fileName}
+                        {getDisplayTitle(item)}
                       </h3>
 
-                      <p className="line-clamp-1 text-sm text-zinc-400">{item.fileName}</p>
+                      <p className="line-clamp-1 text-sm text-zinc-400">
+                        {getDisplayFileName(item)}
+                      </p>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs text-zinc-500">
+                      {item.description ? (
+                        <p className="line-clamp-2 text-sm text-zinc-500">
+                          {item.description}
+                        </p>
+                      ) : null}
+
+                      <div className="grid grid-cols-1 gap-2 text-xs text-zinc-500">
                         <div>
-                          <span className="text-zinc-400">Größe:</span> {formatBytes(item.size)}
+                          <span className="text-zinc-400">Typ:</span> {getKindLabel(item.type)}
                         </div>
                         <div>
-                          <span className="text-zinc-400">Typ:</span> {item.mimeType || "—"}
+                          <span className="text-zinc-400">Status:</span>{" "}
+                          {item.active ? "Aktiv" : "Inaktiv"}
                         </div>
-                        <div className="col-span-2">
-                          <span className="text-zinc-400">Hochgeladen:</span> {formatDate(item.createdAt)}
+                        <div>
+                          <span className="text-zinc-400">Hochgeladen:</span>{" "}
+                          {formatDate(item.createdAt)}
                         </div>
                       </div>
                     </div>
@@ -525,7 +559,7 @@ export default function DashboardMediaPage() {
                         onClick={() => void handleDelete(item)}
                         disabled={deletingId === item.id}
                         className="inline-flex items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-2.5 text-sm font-medium text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                        aria-label={`Delete ${item.fileName}`}
+                        aria-label={`Delete ${getDisplayFileName(item)}`}
                       >
                         {deletingId === item.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
