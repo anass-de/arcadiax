@@ -14,6 +14,21 @@ import {
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 
+type ReleaseListItem = {
+  id: string;
+  title: string;
+  slug: string | null;
+  version: string;
+  description: string | null;
+  imageUrl: string | null;
+  fileUrl: string;
+  downloadCount: number;
+  createdAt: Date;
+  _count: {
+    comments: number;
+  };
+};
+
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
@@ -73,7 +88,7 @@ export default async function ReleasesPage() {
   const session = await getServerSession(authOptions);
   const role = session?.user?.role ?? null;
 
-  const releases = await prisma.release.findMany({
+  const releases: ReleaseListItem[] = await prisma.release.findMany({
     where: {
       status: "PUBLISHED",
     },
@@ -99,12 +114,14 @@ export default async function ReleasesPage() {
   });
 
   const totalDownloads = releases.reduce(
-    (sum, release) => sum + (release.downloadCount ?? 0),
+    (sum: number, release: ReleaseListItem) =>
+      sum + (release.downloadCount ?? 0),
     0
   );
 
   const totalComments = releases.reduce(
-    (sum, release) => sum + (release._count.comments ?? 0),
+    (sum: number, release: ReleaseListItem) =>
+      sum + (release._count.comments ?? 0),
     0
   );
 
@@ -312,7 +329,7 @@ export default async function ReleasesPage() {
           </div>
 
           <div className="grid gap-4 xl:grid-cols-2">
-            {releases.map((release) => {
+            {releases.map((release: ReleaseListItem) => {
               const href = buildReleaseHref(release.slug, release.id);
 
               return (
