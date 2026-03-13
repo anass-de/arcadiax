@@ -1,3 +1,5 @@
+
+// prisma/schema.prisma → model Comment
 generator client {
   provider = "prisma-client-js"
 }
