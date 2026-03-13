@@ -68,9 +68,6 @@ export const authOptions: NextAuthOptions = {
   debug: false,
 
   providers: [
-    /*
-      Google OAuth
-    */
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
       ? [
           GoogleProvider({
@@ -80,9 +77,6 @@ export const authOptions: NextAuthOptions = {
         ]
       : []),
 
-    /*
-      Username / Email Login
-    */
     CredentialsProvider({
       name: "Credentials",
 
@@ -110,10 +104,7 @@ export const authOptions: NextAuthOptions = {
 
         const user = await prisma.user.findFirst({
           where: {
-            OR: [
-              { email: identifier },
-              { username: identifier },
-            ],
+            OR: [{ email: identifier }, { username: identifier }],
           },
           select: {
             id: true,
@@ -148,13 +139,8 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-
-    /*
-      Google Login Handling
-    */
     async signIn({ user, account }) {
       if (account?.provider === "google" && user.email) {
-
         const email = user.email.trim().toLowerCase();
         const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
 
@@ -176,16 +162,10 @@ export const authOptions: NextAuthOptions = {
             username?: string;
           } = {};
 
-          /*
-            Admin automatisch setzen
-          */
           if (dbUser.role !== desiredRole) {
             updateData.role = desiredRole;
           }
 
-          /*
-            Username automatisch generieren
-          */
           if (!dbUser.username) {
             const base = buildUsernameFromEmail(email);
             updateData.username = await getUniqueUsername(base);
@@ -206,47 +186,48 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
 
-    /*
-      JWT erzeugen
-    */
     async jwt({ token, user }) {
-
       if (user) {
         token.sub = (user as any).id ?? token.sub;
-        (token as any).role =
-          (user as any).role ?? (token as any).role ?? "USER";
+        (token as any).role = (user as any).role ?? "USER";
       }
 
       /*
-        Rolle nachladen falls JWT neu ist
+        Rolle IMMER aus DB nachladen,
+        damit Änderungen von USER -> ADMIN sofort greifen
       */
-      if (!(token as any).role && token.email) {
-
+      if (token.email) {
         const dbUser = await prisma.user.findUnique({
           where: { email: token.email.toLowerCase() },
           select: {
             id: true,
             role: true,
+            username: true,
+            name: true,
+            email: true,
+            image: true,
           },
         });
 
         if (dbUser) {
           token.sub = dbUser.id;
           (token as any).role = dbUser.role ?? "USER";
+          token.name = dbUser.name ?? dbUser.username ?? token.name;
+          token.email = dbUser.email ?? token.email;
+          (token as any).picture = dbUser.image ?? (token as any).picture;
         }
       }
 
       return token;
     },
 
-    /*
-      Session erzeugen
-    */
     async session({ session, token }) {
-
       if (session.user) {
         (session.user as any).id = token.sub ?? "";
         (session.user as any).role = (token as any).role ?? "USER";
+        session.user.name = token.name ?? session.user.name;
+        session.user.email = token.email ?? session.user.email;
+        session.user.image = ((token as any).picture as string | null) ?? session.user.image;
       }
 
       return session;
