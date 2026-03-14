@@ -43,11 +43,26 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await signIn("credentials", {
+      const result = await signIn("credentials", {
         identifier: identifier.trim(),
         password,
         callbackUrl,
+        redirect: false,
       });
+
+      if (result?.error) {
+        const params = new URLSearchParams(window.location.search);
+        params.set("error", result.error);
+        window.location.href = `/login?${params.toString()}`;
+        return;
+      }
+
+      if (result?.url) {
+        window.location.href = result.url;
+        return;
+      }
+
+      window.location.href = callbackUrl;
     } finally {
       setIsSubmitting(false);
     }
