@@ -61,37 +61,35 @@ export const authOptions: NextAuthOptions = {
       name: "Credentials",
       credentials: {
         email: {
-          label: "Username or Email",
-          type: "text",
+          label: "E-Mail",
+          type: "email",
         },
         password: {
-          label: "Password",
+          label: "Passwort",
           type: "password",
         },
       },
 
       async authorize(credentials) {
-        const identifier = credentials?.email?.trim().toLowerCase();
+        const email = credentials?.email?.trim().toLowerCase();
         const password = credentials?.password;
 
-        if (!identifier || !password) {
-          return null;
+        if (!email || !password) {
+          throw new Error("E-Mail und Passwort sind erforderlich.");
         }
 
-        const user = await prisma.user.findFirst({
-          where: {
-            OR: [{ email: identifier }, { username: identifier }],
-          },
+        const user = await prisma.user.findUnique({
+          where: { email },
         });
 
         if (!user || !user.passwordHash) {
-          return null;
+          throw new Error("Ungültige E-Mail oder Passwort.");
         }
 
         const isValid = await bcrypt.compare(password, user.passwordHash);
 
         if (!isValid) {
-          return null;
+          throw new Error("Ungültige E-Mail oder Passwort.");
         }
 
         return {
