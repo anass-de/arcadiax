@@ -81,10 +81,7 @@ export const authOptions: NextAuthOptions = {
 
         const user = await prisma.user.findFirst({
           where: {
-            OR: [
-              { email: identifier },
-              { username: identifier },
-            ],
+            OR: [{ email: identifier }, { username: identifier }],
           },
         });
 
@@ -140,11 +137,14 @@ export const authOptions: NextAuthOptions = {
         token.role = (user as { role?: string | null }).role ?? "USER";
         token.username =
           (user as { username?: string | null }).username ?? null;
+        token.name = user.name ?? token.name;
+        token.email = user.email ?? token.email;
+        token.picture = user.image ?? token.picture;
       }
 
-      if (token.email) {
+      if (typeof token.id === "string" && token.id) {
         const dbUser = await prisma.user.findUnique({
-          where: { email: token.email },
+          where: { id: token.id },
           select: {
             id: true,
             role: true,

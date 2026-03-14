@@ -61,7 +61,7 @@ export async function GET() {
     const session = await getServerSession(authOptions);
     const sessionUser = getSessionUser(session);
 
-    if (!sessionUser?.email) {
+    if (!sessionUser?.id) {
       return NextResponse.json(
         { error: "Not authenticated." },
         { status: 401 }
@@ -70,7 +70,7 @@ export async function GET() {
 
     const user = await prisma.user.findUnique({
       where: {
-        email: sessionUser.email.toLowerCase(),
+        id: sessionUser.id,
       },
       select: {
         username: true,
@@ -102,7 +102,7 @@ export async function PATCH(req: Request) {
     const session = await getServerSession(authOptions);
     const sessionUser = getSessionUser(session);
 
-    if (!sessionUser?.email) {
+    if (!sessionUser?.id) {
       return NextResponse.json(
         { error: "Not authenticated." },
         { status: 401 }
@@ -162,7 +162,7 @@ export async function PATCH(req: Request) {
 
     const currentUser = await prisma.user.findUnique({
       where: {
-        email: sessionUser.email.toLowerCase(),
+        id: sessionUser.id,
       },
       select: {
         id: true,

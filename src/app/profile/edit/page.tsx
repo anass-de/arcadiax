@@ -4,6 +4,7 @@ import type { CSSProperties, FormEvent } from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   ArrowLeft,
   KeyRound,
@@ -26,6 +27,7 @@ const BRAND = "#6c5ce7";
 
 export default function EditProfilePage() {
   const router = useRouter();
+  const { update } = useSession();
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -148,6 +150,7 @@ export default function EditProfilePage() {
         throw new Error(data.error || "Failed to save profile.");
       }
 
+      await update();
       setSuccess("Profile saved successfully.");
       setPassword("");
       setPasswordRepeat("");
