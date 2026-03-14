@@ -41,7 +41,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
     if (!id?.trim()) {
       return NextResponse.json(
-        { error: "Ungültige Release-ID." },
+        { error: "Invalid release ID." },
         { status: 400 }
       );
     }
@@ -93,7 +93,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     console.error("GET comments error:", error);
 
     return NextResponse.json(
-      { error: "Kommentare konnten nicht geladen werden." },
+      { error: "Failed to load comments." },
       { status: 500 }
     );
   }
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     if (!id?.trim()) {
       return NextResponse.json(
-        { error: "Ungültige Release-ID." },
+        { error: "Invalid release ID." },
         { status: 400 }
       );
     }
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     if (!user?.id) {
       return NextResponse.json(
-        { error: "Du musst eingeloggt sein." },
+        { error: "You must be logged in to comment." },
         { status: 401 }
       );
     }
@@ -130,14 +130,14 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     if (!content) {
       return NextResponse.json(
-        { error: "Kommentar darf nicht leer sein." },
+        { error: "Comment cannot be empty." },
         { status: 400 }
       );
     }
 
     if (content.length > 2000) {
       return NextResponse.json(
-        { error: "Kommentar ist zu lang." },
+        { error: "Comment is too long." },
         { status: 400 }
       );
     }
@@ -155,7 +155,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
       if (!parent) {
         return NextResponse.json(
-          { error: "Antwort-Ziel wurde nicht gefunden." },
+          { error: "Reply target was not found." },
           { status: 404 }
         );
       }
@@ -187,7 +187,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     console.error("POST comment error:", error);
 
     return NextResponse.json(
-      { error: "Kommentar konnte nicht erstellt werden." },
+      { error: "Failed to create comment." },
       { status: 500 }
     );
   }

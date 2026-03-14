@@ -116,7 +116,7 @@ function getSupabaseAdmin() {
 
   if (!url || !serviceRoleKey) {
     throw new Error(
-      "Supabase ist nicht korrekt konfiguriert. NEXT_PUBLIC_SUPABASE_URL oder SUPABASE_SERVICE_ROLE_KEY fehlt."
+      "Supabase is not configured correctly. NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing."
     );
   }
 
@@ -128,16 +128,8 @@ function getSupabaseAdmin() {
   });
 }
 
-function detectMediaTypeFromMime(mimeType: string): MediaType | null {
-  if (IMAGE_MIME_TYPES.has(mimeType)) {
-    return "IMAGE";
-  }
-
-  if (VIDEO_MIME_TYPES.has(mimeType)) {
-    return "VIDEO";
-  }
-
-  return null;
+function isMediaType(value: string): value is MediaType {
+  return value === "IMAGE" || value === "VIDEO";
 }
 
 function getMaxSizeForType(type: MediaType) {
@@ -166,7 +158,9 @@ function extractStoragePathFromPublicUrl(publicUrl: string | null | undefined) {
   }
 }
 
-async function removeFileFromStorageByPublicUrl(publicUrl: string | null | undefined) {
+async function removeFileFromStorageByPublicUrl(
+  publicUrl: string | null | undefined
+) {
   const filePath = extractStoragePathFromPublicUrl(publicUrl);
 
   if (!filePath) {
@@ -179,7 +173,10 @@ async function removeFileFromStorageByPublicUrl(publicUrl: string | null | undef
   const { error } = await supabase.storage.from(bucket).remove([filePath]);
 
   if (error) {
-    console.error("Konnte Datei aus Supabase Storage nicht löschen:", error.message);
+    console.error(
+      "Failed to remove file from Supabase Storage:",
+      error.message
+    );
   }
 }
 
@@ -201,7 +198,7 @@ async function uploadFileToStorage(args: {
   });
 
   if (error) {
-    throw new Error(`Upload fehlgeschlagen: ${error.message}`);
+    throw new Error(`Upload failed: ${error.message}`);
   }
 
   const {
@@ -241,7 +238,7 @@ export async function GET() {
     console.error("GET /api/admin/media error:", error);
 
     return NextResponse.json(
-      { error: "Fehler beim Laden der Medien." },
+      { error: "Failed to load media." },
       { status: 500 }
     );
   }
@@ -260,6 +257,18 @@ export async function POST(request: NextRequest) {
     const userId = auth.user.id!;
     const formData = await request.formData();
 
+    const typeRaw = String(formData.get("type") ?? "")
+      .trim()
+      .toUpperCase();
+
+    if (!isMediaType(typeRaw)) {
+      return NextResponse.json(
+        { error: "Please choose a valid media type." },
+        { status: 400 }
+      );
+    }
+
+    const selectedType: MediaType = typeRaw;
     const title = normalizeOptionalText(formData.get("title"));
     const description = normalizeOptionalText(formData.get("description"));
     const sortOrder = parseSortOrder(formData.get("sortOrder"));
@@ -269,7 +278,7 @@ export async function POST(request: NextRequest) {
 
     if (!(fileEntry instanceof File) || fileEntry.size <= 0) {
       return NextResponse.json(
-        { error: "Datei ist erforderlich." },
+        { error: "A file is required." },
         { status: 400 }
       );
     }
@@ -278,48 +287,52 @@ export async function POST(request: NextRequest) {
 
     if (!mimeType) {
       return NextResponse.json(
-        { error: "Ungültiger MIME-Typ." },
+        { error: "Invalid MIME type." },
         { status: 400 }
       );
     }
 
-    const detectedType = detectMediaTypeFromMime(mimeType);
-
-    if (!detectedType) {
+    if (selectedType === "IMAGE" && !IMAGE_MIME_TYPES.has(mimeType)) {
       return NextResponse.json(
-        { error: "Ungültiger Medientyp." },
+        { error: "Only image files are allowed for photo uploads." },
         { status: 400 }
       );
     }
 
-    const maxSize = getMaxSizeForType(detectedType);
+    if (selectedType === "VIDEO" && !VIDEO_MIME_TYPES.has(mimeType)) {
+      return NextResponse.json(
+        { error: "Only video files are allowed for video uploads." },
+        { status: 400 }
+      );
+    }
+
+    const maxSize = getMaxSizeForType(selectedType);
 
     if (fileEntry.size > maxSize) {
       return NextResponse.json(
         {
           error:
-            detectedType === "IMAGE"
-              ? "Bild ist zu groß. Maximal erlaubt sind 10 MB."
-              : "Video ist zu groß. Maximal erlaubt sind 200 MB.",
+            selectedType === "IMAGE"
+              ? "Image is too large. Maximum allowed size is 10 MB."
+              : "Video is too large. Maximum allowed size is 200 MB.",
         },
         { status: 400 }
       );
     }
 
-    const folder =
-      detectedType === "IMAGE" ? "media/images" : "media/videos";
+    const folder = selectedType === "IMAGE" ? "media/images" : "media/videos";
 
     const uploaded = await uploadFileToStorage({
       file: fileEntry,
       folder,
-      fileNamePrefix: detectedType.toLowerCase(),
+      fileNamePrefix: selectedType.toLowerCase(),
     });
 
     uploadedPaths.push(uploaded.filePath);
 
     const media = await prisma.homeMedia.create({
       data: {
-        type: detectedType,
+        type: selectedType,
         title,
         description,
         url: uploaded.publicUrl,
@@ -357,7 +370,7 @@ export async function POST(request: NextRequest) {
 
       if (removeError) {
         console.error(
-          "Rollback in Supabase Storage fehlgeschlagen:",
+          "Supabase Storage rollback failed:",
           removeError.message
         );
       }
@@ -366,7 +379,7 @@ export async function POST(request: NextRequest) {
     console.error("POST /api/admin/media error:", error);
 
     return NextResponse.json(
-      { error: "Fehler beim Erstellen des Mediums." },
+      { error: "Failed to create media." },
       { status: 500 }
     );
   }
@@ -385,7 +398,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json(
-        { error: "Media-ID fehlt." },
+        { error: "Media ID is missing." },
         { status: 400 }
       );
     }
@@ -396,7 +409,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!existing) {
       return NextResponse.json(
-        { error: "Medium nicht gefunden." },
+        { error: "Media item not found." },
         { status: 404 }
       );
     }
@@ -415,7 +428,7 @@ export async function DELETE(request: NextRequest) {
     console.error("DELETE /api/admin/media error:", error);
 
     return NextResponse.json(
-      { error: "Fehler beim Löschen des Mediums." },
+      { error: "Failed to delete media." },
       { status: 500 }
     );
   }

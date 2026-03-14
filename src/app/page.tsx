@@ -31,11 +31,23 @@ type HomeMediaRow = {
   updatedAt: Date;
 };
 
+type ReleaseRow = {
+  id: string;
+  slug: string | null;
+  title: string;
+  version: string;
+  description: string | null;
+  imageUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  downloadCount: number;
+};
+
 function getPrimaryAction(role?: string | null) {
   if (role === "ADMIN") {
     return {
       href: "/dashboard",
-      label: "Zum Dashboard",
+      label: "Open Dashboard",
       icon: LayoutDashboard,
     };
   }
@@ -43,14 +55,14 @@ function getPrimaryAction(role?: string | null) {
   if (role) {
     return {
       href: "/releases",
-      label: "Releases ansehen",
+      label: "Browse Releases",
       icon: Package,
     };
   }
 
   return {
     href: "/register",
-    label: "Jetzt starten",
+    label: "Get Started",
     icon: ArrowRight,
   };
 }
@@ -59,14 +71,14 @@ function getSecondaryAction(role?: string | null) {
   if (role === "ADMIN") {
     return {
       href: "/dashboard/releases",
-      label: "Releases verwalten",
+      label: "Manage Releases",
     };
   }
 
   if (role) {
     return {
       href: "/profile",
-      label: "Zum Profil",
+      label: "Go to Profile",
     };
   }
 
@@ -86,23 +98,42 @@ export default async function HomePage() {
   const secondaryAction = getSecondaryAction(role);
   const PrimaryIcon = primaryAction.icon;
 
-  const latestVideos: HomeMediaRow[] = await prisma.homeMedia.findMany({
-    where: {
-      active: true,
-      type: "VIDEO",
-    },
-    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-    take: 3,
-  });
-
-  const latestPhotos: HomeMediaRow[] = await prisma.homeMedia.findMany({
-    where: {
-      active: true,
-      type: "IMAGE",
-    },
-    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-    take: 3,
-  });
+  const [latestReleases, latestVideos, latestPhotos] = await Promise.all([
+    prisma.release.findMany({
+      where: {
+        status: "PUBLISHED",
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      take: 3,
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        version: true,
+        description: true,
+        imageUrl: true,
+        createdAt: true,
+        updatedAt: true,
+        downloadCount: true,
+      },
+    }) as Promise<ReleaseRow[]>,
+    prisma.homeMedia.findMany({
+      where: {
+        active: true,
+        type: "VIDEO",
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      take: 3,
+    }) as Promise<HomeMediaRow[]>,
+    prisma.homeMedia.findMany({
+      where: {
+        active: true,
+        type: "IMAGE",
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      take: 3,
+    }) as Promise<HomeMediaRow[]>,
+  ]);
 
   return (
     <div className="space-y-8 lg:space-y-10">
@@ -122,14 +153,13 @@ export default async function HomePage() {
 
             <div className="space-y-4">
               <h1 className="max-w-4xl text-4xl font-semibold tracking-tight text-white sm:text-5xl lg:text-6xl">
-                Deine moderne Plattform für Releases, Community und Verwaltung.
+                Your modern platform for releases, community, and management.
               </h1>
 
               <p className="max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
-                ArcadiaX verbindet öffentliche Release-Seiten mit einem
-                professionellen Admin-Bereich. Veröffentliche Versionen,
-                verwalte Medien, sammle Kommentare und baue Schritt für Schritt
-                deine eigene Gaming-Plattform auf.
+                ArcadiaX connects public release pages with a professional admin
+                area. Publish versions, manage media, collect comments, and
+                build your own gaming platform step by step.
               </p>
             </div>
 
@@ -154,14 +184,14 @@ export default async function HomePage() {
               <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
                 <div className="text-2xl font-semibold text-white">Releases</div>
                 <div className="mt-1 text-sm text-white/45">
-                  Versionen zentral veröffentlichen
+                  Publish versions in one central place
                 </div>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
                 <div className="text-2xl font-semibold text-white">Media</div>
                 <div className="mt-1 text-sm text-white/45">
-                  Screenshots und Assets organisieren
+                  Organize screenshots and assets
                 </div>
               </div>
 
@@ -170,7 +200,7 @@ export default async function HomePage() {
                   Community
                 </div>
                 <div className="mt-1 text-sm text-white/45">
-                  Kommentare und Benutzer verwalten
+                  Manage comments and users
                 </div>
               </div>
             </div>
@@ -181,7 +211,7 @@ export default async function HomePage() {
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <div className="text-sm font-medium text-white/55">
-                    Plattform Überblick
+                    Platform Overview
                   </div>
                   <div className="mt-1 text-xl font-semibold text-white">
                     ArcadiaX Core
@@ -198,23 +228,23 @@ export default async function HomePage() {
                     <Package className="h-4 w-4 text-blue-300" />
                     <span className="text-sm text-white/80">Release Pages</span>
                   </div>
-                  <span className="text-xs text-white/40">aktiv</span>
+                  <span className="text-xs text-white/40">active</span>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
                   <div className="flex items-center gap-3">
                     <ImageIcon className="h-4 w-4 text-blue-300" />
-                    <span className="text-sm text-white/80">Media Verwaltung</span>
+                    <span className="text-sm text-white/80">Media Management</span>
                   </div>
-                  <span className="text-xs text-white/40">bereit</span>
+                  <span className="text-xs text-white/40">ready</span>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
                   <div className="flex items-center gap-3">
                     <MessageSquare className="h-4 w-4 text-blue-300" />
-                    <span className="text-sm text-white/80">Kommentare</span>
+                    <span className="text-sm text-white/80">Comments</span>
                   </div>
-                  <span className="text-xs text-white/40">integrierbar</span>
+                  <span className="text-xs text-white/40">integrated</span>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
@@ -222,22 +252,22 @@ export default async function HomePage() {
                     <Shield className="h-4 w-4 text-blue-300" />
                     <span className="text-sm text-white/80">Admin Control</span>
                   </div>
-                  <span className="text-xs text-white/40">geschützt</span>
+                  <span className="text-xs text-white/40">protected</span>
                 </div>
               </div>
             </div>
 
             <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-white/[0.04] to-white/[0.02] p-5">
               <div className="text-sm font-medium text-white/55">
-                Für dein Projekt
+                For Your Project
               </div>
               <div className="mt-2 text-lg font-semibold text-white">
-                Ideal für Emulatoren, Fan-Projekte, Tools und eigene Releases
+                Perfect for emulators, fan projects, tools, and custom releases
               </div>
               <p className="mt-3 text-sm leading-6 text-white/60">
-                ArcadiaX ist die perfekte Basis, um eigene Build-Versionen,
-                Launcher, Retro-Projekte oder Community-Releases übersichtlich
-                und professionell zu präsentieren.
+                ArcadiaX is a strong foundation for presenting your own builds,
+                launchers, retro projects, or community releases in a clean and
+                professional way.
               </p>
             </div>
           </div>
@@ -251,8 +281,8 @@ export default async function HomePage() {
           </div>
           <h2 className="text-xl font-semibold text-white">Release Pages</h2>
           <p className="mt-2 text-sm leading-6 text-white/60">
-            Präsentiere jede Version mit Titel, Beschreibung, Datei, Medien und
-            später auch Download-Statistiken.
+            Present every version with title, description, file, media, and later
+            even download statistics.
           </p>
         </div>
 
@@ -260,10 +290,10 @@ export default async function HomePage() {
           <div className="mb-4 inline-flex rounded-2xl border border-white/10 bg-[#07090f] p-3">
             <ImageIcon className="h-5 w-5 text-blue-300" />
           </div>
-          <h2 className="text-xl font-semibold text-white">Media Verwaltung</h2>
+          <h2 className="text-xl font-semibold text-white">Media Management</h2>
           <p className="mt-2 text-sm leading-6 text-white/60">
-            Verwalte Screenshots, Logos, Banner und später Trailer zentral für
-            Home, Releases und Community-Seiten.
+            Manage screenshots, logos, banners, and later trailers for home,
+            releases, and community pages.
           </p>
         </div>
 
@@ -271,10 +301,10 @@ export default async function HomePage() {
           <div className="mb-4 inline-flex rounded-2xl border border-white/10 bg-[#07090f] p-3">
             <MessageSquare className="h-5 w-5 text-blue-300" />
           </div>
-          <h2 className="text-xl font-semibold text-white">Kommentare</h2>
+          <h2 className="text-xl font-semibold text-white">Comments</h2>
           <p className="mt-2 text-sm leading-6 text-white/60">
-            Baue eine Community auf, sammle Feedback und moderiere Inhalte
-            direkt aus deinem Dashboard.
+            Build a community, collect feedback, and moderate content directly
+            from your dashboard.
           </p>
         </div>
 
@@ -282,12 +312,113 @@ export default async function HomePage() {
           <div className="mb-4 inline-flex rounded-2xl border border-white/10 bg-[#07090f] p-3">
             <Users className="h-5 w-5 text-blue-300" />
           </div>
-          <h2 className="text-xl font-semibold text-white">Benutzer & Rollen</h2>
+          <h2 className="text-xl font-semibold text-white">Users & Roles</h2>
           <p className="mt-2 text-sm leading-6 text-white/60">
-            Trenne sauber zwischen Gästen, normalen Nutzern und Admins mit
-            klarer Navigation und Rollenlogik.
+            Cleanly separate guests, regular users, and admins with clear
+            navigation and role-based logic.
           </p>
         </div>
+      </section>
+
+      <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-sm uppercase tracking-[0.22em] text-white/40">
+              Latest Releases
+            </div>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
+              Newest Releases
+            </h2>
+            <p className="mt-2 text-sm text-white/60">
+              The latest 3 published releases from ArcadiaX.
+            </p>
+          </div>
+
+          <Link
+            href="/releases"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm font-semibold text-white/85 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
+          >
+            <Package className="h-4 w-4 text-blue-300" />
+            <span>All Releases</span>
+          </Link>
+        </div>
+
+        {latestReleases.length === 0 ? (
+          <div className="rounded-[24px] border border-white/10 bg-[#07090f] p-6 text-white/50">
+            No published releases available yet.
+          </div>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {latestReleases.map((release: ReleaseRow) => {
+              const releaseHref = release.slug?.trim()
+                ? `/releases/${release.slug}`
+                : `/releases/${release.id}`;
+
+              return (
+                <article
+                  key={release.id}
+                  className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07090f] transition hover:border-blue-400/20"
+                >
+                  <Link href={releaseHref} className="block bg-black">
+                    {release.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={release.imageUrl}
+                        alt={release.title}
+                        className="aspect-video w-full object-cover transition duration-300 hover:scale-[1.02]"
+                      />
+                    ) : (
+                      <div className="flex aspect-video w-full items-center justify-center bg-gradient-to-br from-[#0a0d14] via-[#090b11] to-[#06080d] text-white/35">
+                        <Package className="h-10 w-10 text-blue-300/70" />
+                      </div>
+                    )}
+                  </Link>
+
+                  <div className="space-y-4 p-5">
+                    <div>
+                      <div className="mb-2 inline-flex rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-white/50">
+                        Version {release.version}
+                      </div>
+
+                      <h3 className="text-xl font-semibold text-white">
+                        {release.title}
+                      </h3>
+
+                      {release.description ? (
+                        <p className="mt-2 line-clamp-3 text-sm leading-6 text-white/60">
+                          {release.description}
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-sm leading-6 text-white/35">
+                          No description available.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs text-white/40">
+                        Updated:{" "}
+                        {new Intl.DateTimeFormat("en-US", {
+                          month: "2-digit",
+                          day: "2-digit",
+                          year: "numeric",
+                        }).format(release.updatedAt)}
+                      </div>
+
+                      <Link
+                        href={releaseHref}
+                        className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/75 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
+                      >
+                        Open
+                        <ExternalLink className="h-4 w-4" />
+                      </Link>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
@@ -297,10 +428,10 @@ export default async function HomePage() {
               Media Highlights
             </div>
             <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
-              Neueste Videos
+              Latest Videos
             </h2>
             <p className="mt-2 text-sm text-white/60">
-              Die letzten 3 veröffentlichten Videos aus deiner Media-Bibliothek.
+              The latest 3 published videos from your media library.
             </p>
           </div>
 
@@ -309,13 +440,13 @@ export default async function HomePage() {
             className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm font-semibold text-white/85 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
           >
             <Film className="h-4 w-4 text-blue-300" />
-            <span>Alle Videos</span>
+            <span>All Videos</span>
           </Link>
         </div>
 
         {latestVideos.length === 0 ? (
           <div className="rounded-[24px] border border-white/10 bg-[#07090f] p-6 text-white/50">
-            Noch keine veröffentlichten Videos vorhanden.
+            No published videos available yet.
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -333,7 +464,7 @@ export default async function HomePage() {
                 <div className="space-y-4 p-5">
                   <div>
                     <h3 className="text-xl font-semibold text-white">
-                      {item.title || "Ohne Titel"}
+                      {item.title || "Untitled"}
                     </h3>
 
                     {item.description ? (
@@ -342,17 +473,17 @@ export default async function HomePage() {
                       </p>
                     ) : (
                       <p className="mt-2 text-sm leading-6 text-white/35">
-                        Keine Beschreibung vorhanden.
+                        No description available.
                       </p>
                     )}
                   </div>
 
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xs text-white/40">
-                      Aktualisiert:{" "}
-                      {new Intl.DateTimeFormat("de-DE", {
-                        day: "2-digit",
+                      Updated:{" "}
+                      {new Intl.DateTimeFormat("en-US", {
                         month: "2-digit",
+                        day: "2-digit",
                         year: "numeric",
                       }).format(item.updatedAt)}
                     </div>
@@ -361,7 +492,7 @@ export default async function HomePage() {
                       href="/videos"
                       className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/75 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
                     >
-                      Mehr
+                      More
                       <ExternalLink className="h-4 w-4" />
                     </Link>
                   </div>
@@ -379,10 +510,10 @@ export default async function HomePage() {
               Gallery
             </div>
             <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
-              Neueste Fotos
+              Latest Photos
             </h2>
             <p className="mt-2 text-sm text-white/60">
-              Die letzten 3 veröffentlichten Bilder aus deiner Media-Bibliothek.
+              The latest 3 published images from your media library.
             </p>
           </div>
 
@@ -391,13 +522,13 @@ export default async function HomePage() {
             className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm font-semibold text-white/85 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
           >
             <ImageIcon className="h-4 w-4 text-blue-300" />
-            <span>Alle Fotos</span>
+            <span>All Photos</span>
           </Link>
         </div>
 
         {latestPhotos.length === 0 ? (
           <div className="rounded-[24px] border border-white/10 bg-[#07090f] p-6 text-white/50">
-            Noch keine veröffentlichten Fotos vorhanden.
+            No published photos available yet.
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -409,7 +540,7 @@ export default async function HomePage() {
                 <Link href={item.url} target="_blank" className="block bg-black">
                   <img
                     src={item.url}
-                    alt={item.title || "Foto"}
+                    alt={item.title || "Photo"}
                     className="aspect-video w-full object-cover transition duration-300 hover:scale-[1.02]"
                   />
                 </Link>
@@ -417,7 +548,7 @@ export default async function HomePage() {
                 <div className="space-y-4 p-5">
                   <div>
                     <h3 className="text-xl font-semibold text-white">
-                      {item.title || "Ohne Titel"}
+                      {item.title || "Untitled"}
                     </h3>
 
                     {item.description ? (
@@ -426,17 +557,17 @@ export default async function HomePage() {
                       </p>
                     ) : (
                       <p className="mt-2 text-sm leading-6 text-white/35">
-                        Keine Beschreibung vorhanden.
+                        No description available.
                       </p>
                     )}
                   </div>
 
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xs text-white/40">
-                      Aktualisiert:{" "}
-                      {new Intl.DateTimeFormat("de-DE", {
-                        day: "2-digit",
+                      Updated:{" "}
+                      {new Intl.DateTimeFormat("en-US", {
                         month: "2-digit",
+                        day: "2-digit",
                         year: "numeric",
                       }).format(item.updatedAt)}
                     </div>
@@ -445,7 +576,7 @@ export default async function HomePage() {
                       href="/photos"
                       className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/75 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
                     >
-                      Mehr
+                      More
                       <ExternalLink className="h-4 w-4" />
                     </Link>
                   </div>
@@ -464,10 +595,10 @@ export default async function HomePage() {
             </div>
             <div>
               <div className="text-sm font-medium text-white/50">
-                Nächste Ausbaustufe
+                Next Expansion Stage
               </div>
               <h2 className="text-2xl font-semibold text-white">
-                Von Release-Plattform zu echter Gaming-Plattform
+                From release platform to a full gaming platform
               </h2>
             </div>
           </div>
@@ -478,28 +609,28 @@ export default async function HomePage() {
                 Download Tracking
               </div>
               <div className="mt-1 text-sm text-white/55">
-                Zähle Downloads pro Release und zeige Statistiken im Dashboard.
+                Count downloads per release and show statistics in the dashboard.
               </div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
               <div className="text-sm font-semibold text-white">Screenshots</div>
               <div className="mt-1 text-sm text-white/55">
-                Zeige Bilder und Media-Galerien direkt auf der Release-Seite.
+                Show images and media galleries directly on the release page.
               </div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
-              <div className="text-sm font-semibold text-white">Kommentare</div>
+              <div className="text-sm font-semibold text-white">Comments</div>
               <div className="mt-1 text-sm text-white/55">
-                Nutzer können Releases kommentieren und diskutieren.
+                Users can comment on releases and join discussions.
               </div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
               <div className="text-sm font-semibold text-white">Moderation</div>
               <div className="mt-1 text-sm text-white/55">
-                Admins prüfen Inhalte, Nutzer und Community-Aktivität.
+                Admins review content, users, and community activity.
               </div>
             </div>
           </div>
@@ -507,28 +638,28 @@ export default async function HomePage() {
 
         <div className="rounded-[30px] border border-white/10 bg-gradient-to-br from-blue-500/10 via-white/[0.03] to-transparent p-6 sm:p-8">
           <div className="text-sm font-medium uppercase tracking-[0.22em] text-blue-200/80">
-            Rollenbasierte Plattform
+            Role-Based Platform
           </div>
 
           <div className="mt-4 space-y-4">
             <div className="rounded-2xl border border-white/10 bg-[#07090f]/90 px-4 py-4">
-              <div className="text-sm font-semibold text-white">Gast</div>
+              <div className="text-sm font-semibold text-white">Guest</div>
               <div className="mt-1 text-sm text-white/55">
-                Sieht Startseite, Releases, Login und Register.
+                Can see the homepage, releases, login, and register pages.
               </div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-[#07090f]/90 px-4 py-4">
-              <div className="text-sm font-semibold text-white">Benutzer</div>
+              <div className="text-sm font-semibold text-white">User</div>
               <div className="mt-1 text-sm text-white/55">
-                Sieht Releases, Profil, Username und Logout.
+                Can access releases, profile, username, and logout.
               </div>
             </div>
 
             <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 px-4 py-4">
               <div className="text-sm font-semibold text-white">Administrator</div>
               <div className="mt-1 text-sm text-white/65">
-                Sieht zusätzlich Dashboard, Media, Kommentare und Benutzer.
+                Can additionally access dashboard, media, comments, and users.
               </div>
             </div>
           </div>
@@ -539,7 +670,7 @@ export default async function HomePage() {
               className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/85 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
             >
               <Package className="h-4 w-4 text-blue-300" />
-              <span>Releases öffnen</span>
+              <span>Open Releases</span>
             </Link>
 
             <Link
@@ -555,7 +686,7 @@ export default async function HomePage() {
               className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/85 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
             >
               <ImageIcon className="h-4 w-4 text-blue-300" />
-              <span>Fotos</span>
+              <span>Photos</span>
             </Link>
 
             {role === "ADMIN" ? (
@@ -564,7 +695,7 @@ export default async function HomePage() {
                 className="inline-flex items-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/12 px-4 py-3 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18"
               >
                 <LayoutDashboard className="h-4 w-4 text-blue-300" />
-                <span>Admin Bereich</span>
+                <span>Admin Area</span>
               </Link>
             ) : null}
           </div>

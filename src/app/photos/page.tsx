@@ -44,7 +44,7 @@ function Pagination({
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
       <div className="text-sm text-white/60">
-        Seite <span className="font-semibold text-white">{currentPage}</span> von{" "}
+        Page <span className="font-semibold text-white">{currentPage}</span> of{" "}
         <span className="font-semibold text-white">{totalPages}</span>
       </div>
 
@@ -59,7 +59,7 @@ function Pagination({
           }`}
         >
           <ChevronLeft className="h-4 w-4" />
-          Zurück
+          Previous
         </Link>
 
         <Link
@@ -71,7 +71,7 @@ function Pagination({
               : "border-white/10 bg-[#07090f] text-white hover:border-blue-400/40 hover:bg-blue-500/10"
           }`}
         >
-          Weiter
+          Next
           <ChevronRight className="h-4 w-4" />
         </Link>
       </div>
@@ -115,10 +115,10 @@ export default async function PhotosPage(props: {
           </div>
           <div>
             <h1 className="text-3xl font-semibold text-white sm:text-4xl">
-              Fotos
+              Photos
             </h1>
             <p className="mt-2 text-sm text-white/60">
-              Alle veröffentlichten Bilder mit Pagination.
+              Browse all published images with pagination.
             </p>
           </div>
         </div>
@@ -128,7 +128,7 @@ export default async function PhotosPage(props: {
 
       {photos.length === 0 ? (
         <div className="rounded-[30px] border border-white/10 bg-white/[0.03] p-8 text-white/55">
-          Keine Fotos vorhanden.
+          No photos available.
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -139,13 +139,13 @@ export default async function PhotosPage(props: {
             >
               <img
                 src={item.url}
-                alt={item.title || "Foto"}
+                alt={item.title || "Photo"}
                 className="aspect-video w-full bg-black object-cover"
               />
 
               <div className="p-5">
                 <h2 className="text-xl font-semibold text-white">
-                  {item.title || "Ohne Titel"}
+                  {item.title || "Untitled"}
                 </h2>
 
                 {item.description ? (

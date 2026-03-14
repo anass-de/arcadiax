@@ -69,11 +69,20 @@ function buildRedirectUrl(fileUrl: string, request: NextRequest) {
 
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const session = await getServerSession(authOptions);
+    const user = getSessionUser(session);
+
+    if (!user?.id) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("callbackUrl", request.nextUrl.pathname);
+      return NextResponse.redirect(loginUrl, { status: 307 });
+    }
+
     const { id } = await context.params;
 
     if (!id?.trim()) {
       return NextResponse.json(
-        { error: "Ungültige Release-ID." },
+        { error: "Invalid release ID." },
         { status: 400 }
       );
     }
@@ -91,20 +100,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     if (!release) {
       return NextResponse.json(
-        { error: "Release nicht gefunden oder nicht veröffentlicht." },
+        { error: "Release not found or not published." },
         { status: 404 }
       );
     }
 
     if (!release.fileUrl?.trim()) {
       return NextResponse.json(
-        { error: "Für dieses Release ist keine Datei hinterlegt." },
+        { error: "No file is attached to this release." },
         { status: 400 }
       );
     }
 
-    const session = await getServerSession(authOptions);
-    const user = getSessionUser(session);
     const ip = getClientIp(request);
 
     await prisma.$transaction([
@@ -121,7 +128,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       prisma.download.create({
         data: {
           releaseId: release.id,
-          userId: user?.id ?? null,
+          userId: user.id,
           ip,
         },
       }),
@@ -131,7 +138,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     if (!redirectUrl) {
       return NextResponse.json(
-        { error: "Ungültige Download-URL." },
+        { error: "Invalid download URL." },
         { status: 500 }
       );
     }
@@ -140,10 +147,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
       status: 307,
     });
   } catch (error) {
-    console.error("Download-API Fehler:", error);
+    console.error("Download API error:", error);
 
     return NextResponse.json(
-      { error: "Interner Serverfehler beim Starten des Downloads." },
+      { error: "Internal server error while starting the download." },
       { status: 500 }
     );
   }

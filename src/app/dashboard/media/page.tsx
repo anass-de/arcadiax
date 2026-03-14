@@ -58,16 +58,31 @@ function formatDate(value: string) {
 
   if (Number.isNaN(date.getTime())) return value;
 
-  return new Intl.DateTimeFormat("de-DE", {
+  return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
 }
 
+function formatBytes(bytes?: number | null) {
+  if (!bytes || Number.isNaN(bytes)) return "—";
+
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
 function getKindLabel(kind: MediaType) {
   switch (kind) {
     case "IMAGE":
-      return "Bild";
+      return "Image";
     case "VIDEO":
       return "Video";
     default:
@@ -98,7 +113,7 @@ function getDisplayTitle(item: MediaItem) {
   if (item.title?.trim()) return item.title.trim();
 
   const parts = item.url.split("/");
-  const fileName = parts[parts.length - 1] || "Datei";
+  const fileName = parts[parts.length - 1] || "File";
 
   return decodeURIComponent(fileName);
 }
@@ -118,6 +133,7 @@ export default function DashboardMediaPage() {
   const [query, setQuery] = useState("");
   const [filterKind, setFilterKind] = useState<FilterKind>("all");
 
+  const [selectedType, setSelectedType] = useState<MediaType>("IMAGE");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadDescription, setUploadDescription] = useState("");
@@ -149,7 +165,7 @@ export default function DashboardMediaPage() {
         throw new Error(
           data && "error" in data && data.error
             ? data.error
-            : "Medien konnten nicht geladen werden.",
+            : "Failed to load media.",
         );
       }
 
@@ -161,7 +177,7 @@ export default function DashboardMediaPage() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Unbekannter Fehler beim Laden der Medien.",
+          : "Unknown error while loading media.",
       );
     } finally {
       setLoading(false);
@@ -201,7 +217,7 @@ export default function DashboardMediaPage() {
     event.preventDefault();
 
     if (!selectedFile) {
-      setErrorMessage("Bitte wähle zuerst eine Datei aus.");
+      setErrorMessage("Please select a file first.");
       setSuccessMessage(null);
       return;
     }
@@ -212,6 +228,7 @@ export default function DashboardMediaPage() {
       setSuccessMessage(null);
 
       const formData = new FormData();
+      formData.append("type", selectedType);
       formData.append("file", selectedFile);
 
       if (uploadTitle.trim()) {
@@ -233,17 +250,26 @@ export default function DashboardMediaPage() {
       const data = (await response.json()) as UploadResponse;
 
       if (!response.ok || !data.ok || !data.media) {
-        throw new Error(data.error || "Upload fehlgeschlagen.");
+        throw new Error(data.error || "Upload failed.");
       }
 
       setMediaItems((current: MediaItem[]) => [data.media as MediaItem, ...current]);
       setSelectedFile(null);
       setUploadTitle("");
       setUploadDescription("");
-      setSuccessMessage("Medium erfolgreich hochgeladen.");
+      setSuccessMessage(
+        selectedType === "IMAGE"
+          ? "Image uploaded successfully."
+          : "Video uploaded successfully.",
+      );
+
+      const input = document.getElementById("media-file") as HTMLInputElement | null;
+      if (input) {
+        input.value = "";
+      }
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Upload fehlgeschlagen.",
+        error instanceof Error ? error.message : "Upload failed.",
       );
     } finally {
       setUploading(false);
@@ -252,7 +278,7 @@ export default function DashboardMediaPage() {
 
   async function handleDelete(item: MediaItem) {
     const confirmed = window.confirm(
-      `Möchtest du "${getDisplayTitle(item)}" wirklich löschen?`,
+      `Do you really want to delete "${getDisplayTitle(item)}"?`,
     );
 
     if (!confirmed) return;
@@ -272,16 +298,16 @@ export default function DashboardMediaPage() {
       const data = (await response.json()) as DeleteResponse;
 
       if (!response.ok || !data.ok) {
-        throw new Error(data.error || "Löschen fehlgeschlagen.");
+        throw new Error(data.error || "Delete failed.");
       }
 
       setMediaItems((current: MediaItem[]) =>
         current.filter((entry: MediaItem) => entry.id !== item.id),
       );
-      setSuccessMessage("Medium erfolgreich gelöscht.");
+      setSuccessMessage("Media deleted successfully.");
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Löschen fehlgeschlagen.",
+        error instanceof Error ? error.message : "Delete failed.",
       );
     } finally {
       setDeletingId(null);
@@ -305,7 +331,7 @@ export default function DashboardMediaPage() {
               Media Library
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Verwalte Bilder und Videos für ArcadiaX an einer Stelle.
+              Manage ArcadiaX images and videos in one place.
             </p>
           </div>
 
@@ -320,7 +346,7 @@ export default function DashboardMediaPage() {
             ) : (
               <RefreshCw className="h-4 w-4" />
             )}
-            Neu laden
+            Reload
           </button>
         </div>
 
@@ -341,41 +367,75 @@ export default function DashboardMediaPage() {
       <div className="grid gap-8 xl:grid-cols-[380px_minmax(0,1fr)]">
         <section className="rounded-[28px] border border-white/10 bg-[#0d0d12] p-6 shadow-2xl shadow-black/20">
           <div className="mb-6">
-            <h2 className="text-xl font-semibold text-white">Neues Medium hochladen</h2>
+            <h2 className="text-xl font-semibold text-white">Upload New Media</h2>
             <p className="mt-2 text-sm text-zinc-400">
-              Lade ein Bild oder Video hoch. Der Typ wird automatisch erkannt.
+              First choose whether you want to publish an image or a video.
             </p>
           </div>
 
           <form onSubmit={handleUpload} className="space-y-5">
             <div className="space-y-2">
+              <label className="block text-sm font-medium text-zinc-200">
+                Media Type
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedType("IMAGE")}
+                  className={`inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition ${
+                    selectedType === "IMAGE"
+                      ? "border border-fuchsia-400/50 bg-fuchsia-500/20 text-white"
+                      : "border border-white/10 bg-black/20 text-zinc-300 hover:bg-white/5"
+                  }`}
+                >
+                  <FileImage className="h-4 w-4" />
+                  Photo
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedType("VIDEO")}
+                  className={`inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition ${
+                    selectedType === "VIDEO"
+                      ? "border border-fuchsia-400/50 bg-fuchsia-500/20 text-white"
+                      : "border border-white/10 bg-black/20 text-zinc-300 hover:bg-white/5"
+                  }`}
+                >
+                  <Film className="h-4 w-4" />
+                  Video
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <label className="block text-sm font-medium text-zinc-200" htmlFor="media-file">
-                Datei
+                File
               </label>
               <input
                 id="media-file"
                 type="file"
-                accept="image/*,video/*"
+                accept={selectedType === "IMAGE" ? "image/*" : "video/*"}
                 onChange={handleFileChange}
                 className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-200 file:mr-4 file:rounded-xl file:border-0 file:bg-fuchsia-500/20 file:px-4 file:py-2 file:text-sm file:font-medium file:text-fuchsia-100 hover:file:bg-fuchsia-500/30"
               />
               {selectedFile ? (
                 <p className="text-xs text-zinc-400">
-                  Ausgewählt: <span className="text-zinc-200">{selectedFile.name}</span>
+                  Selected: <span className="text-zinc-200">{selectedFile.name}</span> (
+                  {formatBytes(selectedFile.size)})
                 </p>
               ) : null}
             </div>
 
             <div className="space-y-2">
               <label className="block text-sm font-medium text-zinc-200" htmlFor="media-title">
-                Titel
+                Title
               </label>
               <input
                 id="media-title"
                 type="text"
                 value={uploadTitle}
                 onChange={(event) => setUploadTitle(event.target.value)}
-                placeholder="Optionaler Titel"
+                placeholder="Optional title"
                 className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-fuchsia-400/40"
               />
             </div>
@@ -385,13 +445,13 @@ export default function DashboardMediaPage() {
                 className="block text-sm font-medium text-zinc-200"
                 htmlFor="media-description"
               >
-                Beschreibung
+                Description
               </label>
               <textarea
                 id="media-description"
                 value={uploadDescription}
                 onChange={(event) => setUploadDescription(event.target.value)}
-                placeholder="Optionale Beschreibung"
+                placeholder="Optional description"
                 rows={4}
                 className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-fuchsia-400/40"
               />
@@ -405,12 +465,12 @@ export default function DashboardMediaPage() {
               {uploading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Wird hochgeladen...
+                  Uploading...
                 </>
               ) : (
                 <>
                   <Upload className="h-4 w-4" />
-                  Hochladen
+                  {selectedType === "IMAGE" ? "Upload Photo" : "Upload Video"}
                 </>
               )}
             </button>
@@ -420,9 +480,9 @@ export default function DashboardMediaPage() {
         <section className="rounded-[28px] border border-white/10 bg-[#0d0d12] p-6 shadow-2xl shadow-black/20">
           <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-white">Medien</h2>
+              <h2 className="text-xl font-semibold text-white">Media</h2>
               <p className="mt-2 text-sm text-zinc-400">
-                {filteredItems.length} von {mediaItems.length} Einträgen sichtbar
+                {filteredItems.length} of {mediaItems.length} items visible
               </p>
             </div>
 
@@ -433,7 +493,7 @@ export default function DashboardMediaPage() {
                   type="text"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Suchen..."
+                  placeholder="Search..."
                   className="w-full rounded-2xl border border-white/10 bg-black/20 py-3 pl-10 pr-4 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-fuchsia-400/40"
                 />
                 {query ? (
@@ -441,7 +501,7 @@ export default function DashboardMediaPage() {
                     type="button"
                     onClick={() => setQuery("")}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 transition hover:text-white"
-                    aria-label="Suche leeren"
+                    aria-label="Clear search"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -453,8 +513,8 @@ export default function DashboardMediaPage() {
                 onChange={(event) => setFilterKind(event.target.value as FilterKind)}
                 className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none focus:border-fuchsia-400/40"
               >
-                <option value="all">Alle Typen</option>
-                <option value="IMAGE">Bilder</option>
+                <option value="all">All Types</option>
+                <option value="IMAGE">Photos</option>
                 <option value="VIDEO">Videos</option>
               </select>
             </div>
@@ -464,7 +524,7 @@ export default function DashboardMediaPage() {
             <div className="flex min-h-[320px] items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-black/10">
               <div className="flex items-center gap-3 text-zinc-300">
                 <Loader2 className="h-5 w-5 animate-spin" />
-                Medien werden geladen...
+                Loading media...
               </div>
             </div>
           ) : filteredItems.length === 0 ? (
@@ -472,9 +532,9 @@ export default function DashboardMediaPage() {
               <div className="rounded-2xl bg-white/5 p-4 text-zinc-300">
                 <File className="h-6 w-6" />
               </div>
-              <h3 className="mt-4 text-lg font-semibold text-white">Keine Medien gefunden</h3>
+              <h3 className="mt-4 text-lg font-semibold text-white">No media found</h3>
               <p className="mt-2 max-w-md text-sm text-zinc-400">
-                Passe deine Suche oder den Filter an, oder lade ein neues Medium hoch.
+                Adjust your search or filter, or upload a new media item.
               </p>
             </div>
           ) : (
@@ -531,14 +591,14 @@ export default function DashboardMediaPage() {
 
                       <div className="grid grid-cols-1 gap-2 text-xs text-zinc-500">
                         <div>
-                          <span className="text-zinc-400">Typ:</span> {getKindLabel(item.type)}
+                          <span className="text-zinc-400">Type:</span> {getKindLabel(item.type)}
                         </div>
                         <div>
                           <span className="text-zinc-400">Status:</span>{" "}
-                          {item.active ? "Aktiv" : "Inaktiv"}
+                          {item.active ? "Active" : "Inactive"}
                         </div>
                         <div>
-                          <span className="text-zinc-400">Hochgeladen:</span>{" "}
+                          <span className="text-zinc-400">Uploaded:</span>{" "}
                           {formatDate(item.createdAt)}
                         </div>
                       </div>
@@ -551,7 +611,7 @@ export default function DashboardMediaPage() {
                         rel="noreferrer"
                         className="inline-flex flex-1 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-white/10"
                       >
-                        Öffnen
+                        Open
                       </a>
 
                       <button

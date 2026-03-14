@@ -43,9 +43,9 @@ type ReleaseCommentsProps = {
 function formatDateTime(value: string) {
   const date = new Date(value);
 
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
+  return new Intl.DateTimeFormat("en-US", {
     month: "2-digit",
+    day: "2-digit",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
@@ -53,8 +53,8 @@ function formatDateTime(value: string) {
 }
 
 function getDisplayName(user?: CommentUser | ReleaseCommentsProps["currentUser"]) {
-  if (!user) return "Unbekannter Benutzer";
-  return user.username?.trim() || user.name?.trim() || "Benutzer";
+  if (!user) return "Unknown User";
+  return user.username?.trim() || user.name?.trim() || "User";
 }
 
 function getInitials(user?: CommentUser | ReleaseCommentsProps["currentUser"]) {
@@ -111,15 +111,13 @@ export default function ReleaseComments({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Kommentare konnten nicht geladen werden.");
+        throw new Error(data?.error || "Failed to load comments.");
       }
 
       setComments(Array.isArray(data?.comments) ? data.comments : []);
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Kommentare konnten nicht geladen werden.";
+        error instanceof Error ? error.message : "Failed to load comments.";
 
       setLoadingError(message);
     } finally {
@@ -157,16 +155,14 @@ export default function ReleaseComments({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Kommentar konnte nicht erstellt werden.");
+        throw new Error(data?.error || "Failed to create comment.");
       }
 
       setNewComment("");
       await loadComments();
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Kommentar konnte nicht erstellt werden.";
+        error instanceof Error ? error.message : "Failed to create comment.";
 
       setLoadingError(message);
     } finally {
@@ -197,7 +193,7 @@ export default function ReleaseComments({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Antwort konnte nicht erstellt werden.");
+        throw new Error(data?.error || "Failed to create reply.");
       }
 
       setReplyText((prev) => ({ ...prev, [parentId]: "" }));
@@ -205,9 +201,7 @@ export default function ReleaseComments({
       await loadComments();
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Antwort konnte nicht erstellt werden.";
+        error instanceof Error ? error.message : "Failed to create reply.";
 
       setLoadingError(message);
     } finally {
@@ -235,16 +229,14 @@ export default function ReleaseComments({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Kommentar konnte nicht aktualisiert werden.");
+        throw new Error(data?.error || "Failed to update comment.");
       }
 
       setEditingId(null);
       await loadComments();
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Kommentar konnte nicht aktualisiert werden.";
+        error instanceof Error ? error.message : "Failed to update comment.";
 
       setLoadingError(message);
     } finally {
@@ -254,7 +246,7 @@ export default function ReleaseComments({
 
   async function handleDeleteComment(commentId: string) {
     const confirmed = window.confirm(
-      "Möchtest du diesen Kommentar wirklich löschen?"
+      "Do you really want to delete this comment?"
     );
 
     if (!confirmed) return;
@@ -270,15 +262,13 @@ export default function ReleaseComments({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Kommentar konnte nicht gelöscht werden.");
+        throw new Error(data?.error || "Failed to delete comment.");
       }
 
       await loadComments();
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Kommentar konnte nicht gelöscht werden.";
+        error instanceof Error ? error.message : "Failed to delete comment.";
 
       setLoadingError(message);
     } finally {
@@ -297,7 +287,7 @@ export default function ReleaseComments({
           <div>
             <div className="text-sm font-medium text-white/50">Community</div>
             <h2 className="text-2xl font-semibold text-white">
-              Kommentare {totalCount > 0 ? `(${totalCount})` : ""}
+              Comments {totalCount > 0 ? `(${totalCount})` : ""}
             </h2>
           </div>
         </div>
@@ -307,18 +297,18 @@ export default function ReleaseComments({
           onClick={() => void loadComments()}
           className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
         >
-          Aktualisieren
+          Refresh
         </button>
       </div>
 
       {!isLoggedIn ? (
         <div className="mb-6 rounded-[24px] border border-white/10 bg-[#07090f] p-5">
           <div className="text-sm font-semibold text-white">
-            Zum Kommentieren bitte einloggen
+            Please log in to comment
           </div>
           <p className="mt-2 text-sm leading-6 text-white/60">
-            Gäste können Kommentare lesen. Nur angemeldete Benutzer können neue
-            Kommentare oder Antworten schreiben.
+            Guests can read comments. Only signed-in users can post new comments
+            or replies.
           </p>
         </div>
       ) : (
@@ -332,7 +322,7 @@ export default function ReleaseComments({
               <div className="truncate text-sm font-semibold text-white">
                 {getDisplayName(currentUser)}
               </div>
-              <div className="text-xs text-white/45">Neuen Kommentar schreiben</div>
+              <div className="text-xs text-white/45">Write a new comment</div>
             </div>
           </div>
 
@@ -342,13 +332,13 @@ export default function ReleaseComments({
               onChange={(e) => setNewComment(e.target.value)}
               rows={4}
               maxLength={2000}
-              placeholder="Schreibe deinen Kommentar zu diesem Release..."
+              placeholder="Write your comment about this release..."
               className="w-full rounded-2xl border border-white/10 bg-[#05070b] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
             />
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-xs text-white/40">
-                {newComment.length}/2000 Zeichen
+                {newComment.length}/2000 characters
               </div>
 
               <button
@@ -358,7 +348,7 @@ export default function ReleaseComments({
                 className="inline-flex items-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/12 px-4 py-3 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Send className="h-4 w-4 text-blue-300" />
-                <span>{posting ? "Wird gesendet..." : "Kommentar posten"}</span>
+                <span>{posting ? "Posting..." : "Post Comment"}</span>
               </button>
             </div>
           </div>
@@ -373,15 +363,15 @@ export default function ReleaseComments({
 
       {loading ? (
         <div className="rounded-[24px] border border-white/10 bg-[#07090f] p-5 text-sm text-white/60">
-          Kommentare werden geladen...
+          Loading comments...
         </div>
       ) : comments.length === 0 ? (
         <div className="rounded-[24px] border border-white/10 bg-[#07090f] p-5">
           <div className="text-sm font-semibold text-white">
-            Noch keine Kommentare vorhanden
+            No comments yet
           </div>
           <p className="mt-2 text-sm leading-6 text-white/60">
-            Sei die erste Person, die etwas zu diesem Release schreibt.
+            Be the first person to say something about this release.
           </p>
         </div>
       ) : (
@@ -439,7 +429,7 @@ export default function ReleaseComments({
                             className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
                           >
                             <Reply className="h-3.5 w-3.5" />
-                            <span>Antworten</span>
+                            <span>Reply</span>
                           </button>
                         ) : null}
 
@@ -457,7 +447,7 @@ export default function ReleaseComments({
                               className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                              <span>Bearbeiten</span>
+                              <span>Edit</span>
                             </button>
 
                             <button
@@ -468,7 +458,7 @@ export default function ReleaseComments({
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                               <span>
-                                {deletingId === comment.id ? "Löschen..." : "Löschen"}
+                                {deletingId === comment.id ? "Deleting..." : "Delete"}
                               </span>
                             </button>
                           </>
@@ -494,7 +484,7 @@ export default function ReleaseComments({
 
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="text-xs text-white/40">
-                              {(editText[comment.id] || "").length}/2000 Zeichen
+                              {(editText[comment.id] || "").length}/2000 characters
                             </div>
 
                             <div className="flex items-center gap-2">
@@ -506,7 +496,7 @@ export default function ReleaseComments({
                                 className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
                               >
                                 <X className="h-3.5 w-3.5" />
-                                <span>Abbrechen</span>
+                                <span>Cancel</span>
                               </button>
 
                               <button
@@ -519,7 +509,7 @@ export default function ReleaseComments({
                               >
                                 <Save className="h-3.5 w-3.5 text-blue-300" />
                                 <span>
-                                  {isSavingEdit ? "Speichern..." : "Speichern"}
+                                  {isSavingEdit ? "Saving..." : "Save"}
                                 </span>
                               </button>
                             </div>
@@ -545,13 +535,13 @@ export default function ReleaseComments({
                             }
                             rows={3}
                             maxLength={2000}
-                            placeholder={`Antwort an ${getDisplayName(comment.user)}...`}
+                            placeholder={`Reply to ${getDisplayName(comment.user)}...`}
                             className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
                           />
 
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="text-xs text-white/40">
-                              {replyValue.length}/2000 Zeichen
+                              {replyValue.length}/2000 characters
                             </div>
 
                             <div className="flex items-center gap-2">
@@ -566,7 +556,7 @@ export default function ReleaseComments({
                                 }}
                                 className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
                               >
-                                Abbrechen
+                                Cancel
                               </button>
 
                               <button
@@ -577,7 +567,7 @@ export default function ReleaseComments({
                               >
                                 <Send className="h-3.5 w-3.5 text-blue-300" />
                                 <span>
-                                  {isReplyPosting ? "Senden..." : "Antwort senden"}
+                                  {isReplyPosting ? "Posting..." : "Post Reply"}
                                 </span>
                               </button>
                             </div>
@@ -637,7 +627,7 @@ export default function ReleaseComments({
                                           className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-[#05070b] px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
                                         >
                                           <Pencil className="h-3.5 w-3.5" />
-                                          <span>Bearbeiten</span>
+                                          <span>Edit</span>
                                         </button>
 
                                         <button
@@ -649,8 +639,8 @@ export default function ReleaseComments({
                                           <Trash2 className="h-3.5 w-3.5" />
                                           <span>
                                             {deletingId === reply.id
-                                              ? "Löschen..."
-                                              : "Löschen"}
+                                              ? "Deleting..."
+                                              : "Delete"}
                                           </span>
                                         </button>
                                       </div>
@@ -680,7 +670,7 @@ export default function ReleaseComments({
                                             className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
                                           >
                                             <X className="h-3.5 w-3.5" />
-                                            <span>Abbrechen</span>
+                                            <span>Cancel</span>
                                           </button>
 
                                           <button
@@ -695,8 +685,8 @@ export default function ReleaseComments({
                                             <Save className="h-3.5 w-3.5 text-blue-300" />
                                             <span>
                                               {isSavingReply
-                                                ? "Speichern..."
-                                                : "Speichern"}
+                                                ? "Saving..."
+                                                : "Save"}
                                             </span>
                                           </button>
                                         </div>
