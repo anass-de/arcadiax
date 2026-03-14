@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ComponentType } from "react";
 import {
   ExternalLink,
   FolderOpen,
@@ -21,38 +22,40 @@ type NavItem = {
   label: string;
   href: string;
   description: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
 };
+
+const BRAND = "#6c5ce7";
 
 const navItems: NavItem[] = [
   {
-    label: "Übersicht",
+    label: "Overview",
     href: "/dashboard",
-    description: "Dashboard Startseite",
+    description: "Dashboard home",
     icon: LayoutDashboard,
   },
   {
     label: "Releases",
     href: "/dashboard/releases",
-    description: "Versionen verwalten",
+    description: "Manage versions",
     icon: Package,
   },
   {
     label: "Media",
     href: "/dashboard/media",
-    description: "Bilder und Videos",
+    description: "Images and videos",
     icon: FolderOpen,
   },
   {
-    label: "Kommentare",
+    label: "Comments",
     href: "/dashboard/comments",
-    description: "Kommentare moderieren",
+    description: "Moderate discussions",
     icon: MessageSquare,
   },
   {
-    label: "Benutzer",
+    label: "Users",
     href: "/dashboard/users",
-    description: "Accounts und Rollen",
+    description: "Accounts and roles",
     icon: Users,
   },
 ];
@@ -81,7 +84,14 @@ export default function DashboardSidebar({
   return (
     <aside className="sticky top-6 rounded-3xl border border-white/10 bg-zinc-900/80 p-5 shadow-xl shadow-black/20 backdrop-blur">
       <div className="mb-6 border-b border-white/10 pb-5">
-        <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300">
+        <div
+          className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]"
+          style={{
+            borderColor: "rgba(108, 92, 231, 0.22)",
+            backgroundColor: "rgba(108, 92, 231, 0.10)",
+            color: BRAND,
+          }}
+        >
           <Shield className="h-3.5 w-3.5" />
           ArcadiaX Admin
         </div>
@@ -91,13 +101,13 @@ export default function DashboardSidebar({
         </h2>
 
         <p className="mt-2 text-sm leading-6 text-zinc-400">
-          Verwaltung für Inhalte, Medien, Community und Benutzer.
+          Control content, media, community, and users from one place.
         </p>
 
         <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
           <p className="text-sm font-semibold text-white">{displayName}</p>
           <p className="mt-1 break-all text-xs text-zinc-500">
-            {userEmail?.trim() || "Keine E-Mail verfügbar"}
+            {userEmail?.trim() || "No email available"}
           </p>
         </div>
       </div>
@@ -114,18 +124,35 @@ export default function DashboardSidebar({
               className={[
                 "group block rounded-2xl border px-4 py-3 transition-all duration-200",
                 active
-                  ? "border-cyan-400/30 bg-cyan-400/10 shadow-lg shadow-cyan-950/20"
+                  ? "shadow-lg"
                   : "border-white/10 bg-zinc-950/70 hover:border-zinc-700 hover:bg-zinc-800/70",
               ].join(" ")}
+              style={
+                active
+                  ? {
+                      borderColor: "rgba(108, 92, 231, 0.28)",
+                      backgroundColor: "rgba(108, 92, 231, 0.10)",
+                      boxShadow: "0 10px 30px rgba(0,0,0,0.20)",
+                    }
+                  : undefined
+              }
             >
               <div className="flex items-start gap-3">
                 <div
-                  className={[
-                    "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition",
+                  className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition"
+                  style={
                     active
-                      ? "border-cyan-400/30 bg-cyan-400/15 text-cyan-300"
-                      : "border-white/10 bg-white/5 text-zinc-400 group-hover:text-white",
-                  ].join(" ")}
+                      ? {
+                          borderColor: "rgba(108, 92, 231, 0.28)",
+                          backgroundColor: "rgba(108, 92, 231, 0.14)",
+                          color: BRAND,
+                        }
+                      : {
+                          borderColor: "rgba(255,255,255,0.10)",
+                          backgroundColor: "rgba(255,255,255,0.05)",
+                          color: "#a1a1aa",
+                        }
+                  }
                 >
                   <Icon className="h-4.5 w-4.5" />
                 </div>
@@ -143,7 +170,7 @@ export default function DashboardSidebar({
                   <div
                     className={[
                       "mt-1 text-xs transition",
-                      active ? "text-cyan-100/80" : "text-zinc-500 group-hover:text-zinc-400",
+                      active ? "text-white/75" : "text-zinc-500 group-hover:text-zinc-400",
                     ].join(" ")}
                   >
                     {item.description}
@@ -161,7 +188,7 @@ export default function DashboardSidebar({
             href="/"
             className="flex items-center justify-between rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-white"
           >
-            <span>Zur Startseite</span>
+            <span>Back to Home</span>
             <ExternalLink className="h-4 w-4" />
           </Link>
 
@@ -169,7 +196,7 @@ export default function DashboardSidebar({
             href="/releases"
             className="flex items-center justify-between rounded-2xl border border-white/10 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-white"
           >
-            <span>Öffentliche Releases</span>
+            <span>Public Releases</span>
             <ExternalLink className="h-4 w-4" />
           </Link>
         </div>

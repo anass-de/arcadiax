@@ -28,13 +28,15 @@ type SiteNavbarProps = {
   user?: NavbarUser | null;
 };
 
+const BRAND = "#6c5ce7";
+
 function getDisplayName(user?: NavbarUser | null) {
   if (!user) return "";
-  return user.name?.trim() || user.email?.split("@")[0] || "Benutzer";
+  return user.name?.trim() || user.email?.split("@")[0] || "User";
 }
 
 function getInitials(user?: NavbarUser | null) {
-  const source = getDisplayName(user) || "B";
+  const source = getDisplayName(user) || "U";
   const parts = source.split(/\s+/).filter(Boolean);
 
   if (parts.length >= 2) {
@@ -59,29 +61,29 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
   const initials = getInitials(user);
 
   const guestLinks = [
-    { href: "/", label: "Start", icon: House },
+    { href: "/", label: "Home", icon: House },
     { href: "/releases", label: "Releases", icon: Package },
     { href: "/videos", label: "Videos", icon: Film },
-    { href: "/photos", label: "Bilder", icon: ImageIcon },
+    { href: "/photos", label: "Photos", icon: ImageIcon },
   ];
 
   const userLinks = [
-    { href: "/", label: "Start", icon: House },
+    { href: "/", label: "Home", icon: House },
     { href: "/releases", label: "Releases", icon: Package },
     { href: "/videos", label: "Videos", icon: Film },
-    { href: "/photos", label: "Bilder", icon: ImageIcon },
-    { href: "/profile", label: "Profil", icon: User },
+    { href: "/photos", label: "Photos", icon: ImageIcon },
+    { href: "/profile", label: "Profile", icon: User },
   ];
 
   const adminLinks = [
-    { href: "/", label: "Start", icon: House },
+    { href: "/", label: "Home", icon: House },
     { href: "/releases", label: "Releases", icon: Package },
     { href: "/videos", label: "Videos", icon: Film },
-    { href: "/photos", label: "Bilder", icon: ImageIcon },
+    { href: "/photos", label: "Photos", icon: ImageIcon },
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/dashboard/media", label: "Media", icon: ImageIcon },
-    { href: "/dashboard/comments", label: "Kommentare", icon: MessageSquare },
-    { href: "/dashboard/users", label: "Benutzer", icon: Users },
+    { href: "/dashboard/comments", label: "Comments", icon: MessageSquare },
+    { href: "/dashboard/users", label: "Users", icon: Users },
   ];
 
   const navLinks = isAdmin ? adminLinks : isLoggedIn ? userLinks : guestLinks;
@@ -92,13 +94,21 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
         <div className="flex min-w-0 items-center gap-4">
           <Link
             href={isAdmin ? "/dashboard" : "/"}
-            className="group flex min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-cyan-400/30 hover:bg-white/[0.06]"
+            className="group flex min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 transition hover:bg-white/[0.06]"
+            style={{ borderColor: "rgba(255,255,255,0.10)" }}
           >
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-400/15 via-white/[0.04] to-transparent shadow-[0_0_30px_rgba(34,211,238,0.12)]">
+            <div
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border bg-gradient-to-br shadow-[0_0_30px_rgba(108,92,231,0.14)]"
+              style={{
+                borderColor: "rgba(108,92,231,0.25)",
+                backgroundImage:
+                  "linear-gradient(to bottom right, rgba(108,92,231,0.18), rgba(255,255,255,0.04), transparent)",
+              }}
+            >
               {isAdmin ? (
-                <Shield className="h-5 w-5 text-cyan-300" />
+                <Shield className="h-5 w-5" style={{ color: BRAND }} />
               ) : (
-                <Package className="h-5 w-5 text-cyan-300" />
+                <Package className="h-5 w-5" style={{ color: BRAND }} />
               )}
             </div>
 
@@ -127,17 +137,23 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
                   className={[
                     "group inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition",
                     active
-                      ? "border border-cyan-400/20 bg-cyan-400/10 text-white shadow-[0_0_0_1px_rgba(34,211,238,0.12),0_10px_30px_rgba(0,0,0,0.25)]"
+                      ? "border text-white shadow-[0_0_0_1px_rgba(108,92,231,0.12),0_10px_30px_rgba(0,0,0,0.25)]"
                       : "border border-transparent text-zinc-300 hover:border-white/10 hover:bg-white/[0.06] hover:text-white",
                   ].join(" ")}
+                  style={
+                    active
+                      ? {
+                          borderColor: "rgba(108,92,231,0.22)",
+                          backgroundColor: "rgba(108,92,231,0.12)",
+                        }
+                      : undefined
+                  }
                 >
                   <Icon
-                    className={[
-                      "h-4 w-4 transition",
-                      active
-                        ? "text-cyan-300"
-                        : "text-zinc-500 group-hover:text-zinc-200",
-                    ].join(" ")}
+                    className="h-4 w-4 transition"
+                    style={{
+                      color: active ? BRAND : "#71717a",
+                    }}
                   />
                   <span>{item.label}</span>
                 </Link>
@@ -159,10 +175,11 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
 
               <Link
                 href="/register"
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-medium text-black transition hover:opacity-90"
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium text-white transition hover:opacity-90"
+                style={{ backgroundColor: BRAND }}
               >
                 <UserPlus className="h-4 w-4" />
-                <span>Registrieren</span>
+                <span>Register</span>
               </Link>
             </div>
           ) : (
@@ -180,7 +197,7 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
                     {displayName}
                   </div>
                   <div className="truncate text-xs text-zinc-500">
-                    {isAdmin ? "Administrator" : "Angemeldet"}
+                    {isAdmin ? "Administrator" : "Signed in"}
                   </div>
                 </div>
               </Link>
@@ -212,15 +229,21 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
                 className={[
                   "inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition",
                   active
-                    ? "border-cyan-400/20 bg-cyan-400/10 text-white"
+                    ? "text-white"
                     : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/[0.06] hover:text-white",
                 ].join(" ")}
+                style={
+                  active
+                    ? {
+                        borderColor: "rgba(108,92,231,0.22)",
+                        backgroundColor: "rgba(108,92,231,0.12)",
+                      }
+                    : undefined
+                }
               >
                 <Icon
-                  className={[
-                    "h-4 w-4",
-                    active ? "text-cyan-300" : "text-zinc-500",
-                  ].join(" ")}
+                  className="h-4 w-4"
+                  style={{ color: active ? BRAND : "#71717a" }}
                 />
                 <span>{item.label}</span>
               </Link>
@@ -239,10 +262,11 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
 
               <Link
                 href="/register"
-                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-medium text-black transition hover:opacity-90"
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-white transition hover:opacity-90"
+                style={{ backgroundColor: BRAND }}
               >
                 <UserPlus className="h-4 w-4" />
-                <span>Registrieren</span>
+                <span>Register</span>
               </Link>
             </>
           ) : (

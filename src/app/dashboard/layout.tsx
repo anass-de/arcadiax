@@ -17,6 +17,8 @@ type SessionUser = {
   image?: string | null;
 };
 
+const BRAND = "#6c5ce7";
+
 export default async function DashboardLayout({
   children,
 }: DashboardLayoutProps) {
@@ -37,8 +39,11 @@ export default async function DashboardLayout({
         <div className="mb-6 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black p-6 shadow-2xl shadow-black/20">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400/80">
-                Admin Bereich
+              <p
+                className="text-xs font-semibold uppercase tracking-[0.2em]"
+                style={{ color: "rgba(108, 92, 231, 0.85)" }}
+              >
+                Admin Area
               </p>
 
               <h1 className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
@@ -46,20 +51,23 @@ export default async function DashboardLayout({
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400 sm:text-base">
-                Verwalte Releases, Medien, Kommentare und Benutzer in einer
-                zentralen und übersichtlichen Oberfläche.
+                Manage releases, media, comments, and users in one central and
+                clean interface.
               </p>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
+            <div
+              className="rounded-2xl border bg-white/5 px-4 py-3 backdrop-blur"
+              style={{ borderColor: "rgba(255,255,255,0.10)" }}
+            >
               <p className="text-xs uppercase tracking-wide text-zinc-500">
-                Eingeloggt als
+                Signed in as
               </p>
               <p className="mt-1 font-semibold text-white">
                 {user.name?.trim() || "Administrator"}
               </p>
               <p className="text-sm text-zinc-400">
-                {user.email?.trim() || "Keine E-Mail verfügbar"}
+                {user.email?.trim() || "No email available"}
               </p>
             </div>
           </div>

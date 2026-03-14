@@ -29,18 +29,20 @@ type ReleaseListItem = {
   };
 };
 
+const BRAND = "#6c5ce7";
+
 function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
+  return new Intl.DateTimeFormat("en-US", {
     month: "2-digit",
+    day: "2-digit",
     year: "numeric",
   }).format(new Date(date));
 }
 
 function formatDateTime(date: Date) {
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
+  return new Intl.DateTimeFormat("en-US", {
     month: "2-digit",
+    day: "2-digit",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
@@ -49,7 +51,7 @@ function formatDateTime(date: Date) {
 
 function getSafeDescription(text?: string | null) {
   if (!text?.trim()) {
-    return "Keine Beschreibung vorhanden.";
+    return "No description available.";
   }
 
   return text.length > 180 ? `${text.slice(0, 180)}...` : text;
@@ -67,7 +69,7 @@ function getPrimaryAction(role?: string | null) {
   if (role === "ADMIN") {
     return {
       href: "/dashboard/releases",
-      label: "Releases verwalten",
+      label: "Manage Releases",
       icon: Package,
     };
   }
@@ -75,14 +77,14 @@ function getPrimaryAction(role?: string | null) {
   if (role) {
     return {
       href: "/profile",
-      label: "Mein Profil",
+      label: "My Profile",
       icon: Shield,
     };
   }
 
   return {
     href: "/register",
-    label: "Konto erstellen",
+    label: "Create Account",
     icon: Sparkles,
   };
 }
@@ -135,34 +137,47 @@ export default async function ReleasesPage() {
     <div className="space-y-8 lg:space-y-10">
       <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black px-6 py-8 shadow-xl shadow-black/15 sm:px-8 sm:py-10 lg:px-10 lg:py-12">
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-16 top-0 h-56 w-56 rounded-full bg-cyan-400/10 blur-3xl" />
+          <div
+            className="absolute -left-16 top-0 h-56 w-56 rounded-full blur-3xl"
+            style={{ backgroundColor: "rgba(108, 92, 231, 0.12)" }}
+          />
           <div className="absolute right-0 top-8 h-64 w-64 rounded-full bg-white/[0.03] blur-3xl" />
-          <div className="absolute bottom-0 left-1/3 h-44 w-44 rounded-full bg-cyan-500/5 blur-3xl" />
+          <div
+            className="absolute bottom-0 left-1/3 h-44 w-44 rounded-full blur-3xl"
+            style={{ backgroundColor: "rgba(108, 92, 231, 0.06)" }}
+          />
         </div>
 
         <div className="relative grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
           <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+            <div
+              className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em]"
+              style={{
+                borderColor: "rgba(108, 92, 231, 0.22)",
+                backgroundColor: "rgba(108, 92, 231, 0.10)",
+                color: BRAND,
+              }}
+            >
               <Sparkles className="h-4 w-4" />
-              Öffentliche Releases
+              Public Releases
             </div>
 
             <div className="space-y-4">
               <h1 className="max-w-4xl text-4xl font-semibold tracking-tight text-white sm:text-5xl lg:text-6xl">
-                Entdecke alle veröffentlichten ArcadiaX Releases.
+                Explore all published ArcadiaX releases.
               </h1>
 
               <p className="max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg">
-                Hier findest du alle aktuell veröffentlichten Versionen mit
-                Beschreibung, Veröffentlichungsdatum, Downloads und
-                Community-Feedback.
+                Here you can find every currently published version with
+                description, release date, downloads, and community feedback.
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
               <Link
                 href={primaryAction.href}
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3.5 text-sm font-semibold text-black transition hover:opacity-90"
+                className="inline-flex items-center gap-2 rounded-2xl px-5 py-3.5 text-sm font-semibold text-white transition hover:opacity-90"
+                style={{ backgroundColor: BRAND }}
               >
                 <PrimaryActionIcon className="h-4 w-4" />
                 <span>{primaryAction.label}</span>
@@ -173,8 +188,8 @@ export default async function ReleasesPage() {
                   href="/dashboard"
                   className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                 >
-                  <Shield className="h-4 w-4 text-cyan-300" />
-                  <span>Zum Dashboard</span>
+                  <Shield className="h-4 w-4" style={{ color: BRAND }} />
+                  <span>Go to Dashboard</span>
                 </Link>
               ) : (
                 <Link
@@ -182,7 +197,7 @@ export default async function ReleasesPage() {
                   className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                 >
                   <ArrowRight className="h-4 w-4" />
-                  <span>Zur Startseite</span>
+                  <span>Back to Home</span>
                 </Link>
               )}
             </div>
@@ -193,7 +208,7 @@ export default async function ReleasesPage() {
                   {releases.length}
                 </div>
                 <div className="mt-1 text-sm text-zinc-500">
-                  Veröffentlichte Releases
+                  Published releases
                 </div>
               </div>
 
@@ -202,7 +217,7 @@ export default async function ReleasesPage() {
                   {totalDownloads}
                 </div>
                 <div className="mt-1 text-sm text-zinc-500">
-                  Gesamte Downloads
+                  Total downloads
                 </div>
               </div>
 
@@ -211,7 +226,7 @@ export default async function ReleasesPage() {
                   {totalComments}
                 </div>
                 <div className="mt-1 text-sm text-zinc-500">
-                  Kommentare gesamt
+                  Total comments
                 </div>
               </div>
             </div>
@@ -222,23 +237,23 @@ export default async function ReleasesPage() {
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <div className="text-sm font-medium text-zinc-500">
-                    Release Übersicht
+                    Release Overview
                   </div>
                   <div className="mt-1 text-xl font-semibold text-white">
-                    Plattform Status
+                    Platform Status
                   </div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <Package className="h-5 w-5 text-cyan-300" />
+                  <Package className="h-5 w-5" style={{ color: BRAND }} />
                 </div>
               </div>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <Package className="h-4 w-4 text-cyan-300" />
+                    <Package className="h-4 w-4" style={{ color: BRAND }} />
                     <span className="text-sm text-zinc-200">
-                      Veröffentlichte Releases
+                      Published Releases
                     </span>
                   </div>
                   <span className="text-xs text-zinc-500">{releases.length}</span>
@@ -246,7 +261,7 @@ export default async function ReleasesPage() {
 
                 <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <Download className="h-4 w-4 text-cyan-300" />
+                    <Download className="h-4 w-4" style={{ color: BRAND }} />
                     <span className="text-sm text-zinc-200">Downloads</span>
                   </div>
                   <span className="text-xs text-zinc-500">{totalDownloads}</span>
@@ -254,18 +269,18 @@ export default async function ReleasesPage() {
 
                 <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <MessageSquare className="h-4 w-4 text-cyan-300" />
-                    <span className="text-sm text-zinc-200">Kommentare</span>
+                    <MessageSquare className="h-4 w-4" style={{ color: BRAND }} />
+                    <span className="text-sm text-zinc-200">Comments</span>
                   </div>
                   <span className="text-xs text-zinc-500">{totalComments}</span>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <ImageIcon className="h-4 w-4 text-cyan-300" />
-                    <span className="text-sm text-zinc-200">Media bereit</span>
+                    <ImageIcon className="h-4 w-4" style={{ color: BRAND }} />
+                    <span className="text-sm text-zinc-200">Media Ready</span>
                   </div>
-                  <span className="text-xs text-zinc-500">aktiv</span>
+                  <span className="text-xs text-zinc-500">active</span>
                 </div>
               </div>
             </div>
@@ -275,13 +290,13 @@ export default async function ReleasesPage() {
                 ArcadiaX Releases
               </div>
               <div className="mt-2 text-lg font-semibold text-white">
-                Eine saubere Übersicht für Launcher, Tools, Emulatoren und eigene
-                Builds
+                A clean release hub for launchers, tools, emulators, and custom
+                builds
               </div>
               <p className="mt-3 text-sm leading-6 text-zinc-400">
-                Jede veröffentlichte Version bekommt ihre eigene Seite. So wirkt
-                ArcadiaX nicht nur wie ein Download-Bereich, sondern wie eine
-                echte Plattform.
+                Every published version gets its own page. That makes ArcadiaX
+                feel like more than a download area — it becomes a real
+                platform.
               </p>
             </div>
           </div>
@@ -293,24 +308,25 @@ export default async function ReleasesPage() {
           <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-sm uppercase tracking-[0.22em] text-zinc-500">
-                Noch leer
+                Empty for now
               </div>
               <h2 className="mt-2 text-2xl font-semibold text-white">
-                Noch keine veröffentlichten Releases vorhanden
+                No published releases available yet
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-                Sobald ein Release auf PUBLISHED gesetzt ist, erscheint es hier
-                automatisch in der öffentlichen Übersicht.
+                As soon as a release is set to PUBLISHED, it will automatically
+                appear here in the public release list.
               </p>
             </div>
 
             {role === "ADMIN" ? (
               <Link
                 href="/dashboard/releases"
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90"
+                style={{ backgroundColor: BRAND }}
               >
                 <Package className="h-4 w-4" />
-                <span>Releases verwalten</span>
+                <span>Manage Releases</span>
               </Link>
             ) : null}
           </div>
@@ -320,15 +336,15 @@ export default async function ReleasesPage() {
           <div className="flex items-end justify-between gap-4">
             <div>
               <div className="text-sm uppercase tracking-[0.22em] text-zinc-500">
-                Release Bibliothek
+                Release Library
               </div>
               <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
-                Alle veröffentlichten Versionen
+                All Published Versions
               </h2>
             </div>
 
             <div className="hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-400 md:block">
-              {releases.length} Einträge
+              {releases.length} items
             </div>
           </div>
 
@@ -354,15 +370,22 @@ export default async function ReleasesPage() {
                         <div className="flex h-full w-full items-center justify-center">
                           <div className="flex flex-col items-center gap-3 text-zinc-500">
                             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                              <ImageIcon className="h-8 w-8 text-cyan-300/80" />
+                              <ImageIcon className="h-8 w-8" style={{ color: `${BRAND}cc` }} />
                             </div>
-                            <span className="text-sm">Kein Vorschaubild</span>
+                            <span className="text-sm">No preview image</span>
                           </div>
                         </div>
                       )}
                     </div>
 
-                    <div className="absolute left-4 top-4 inline-flex items-center rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-cyan-300">
+                    <div
+                      className="absolute left-4 top-4 inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-[0.18em]"
+                      style={{
+                        borderColor: "rgba(108, 92, 231, 0.22)",
+                        backgroundColor: "rgba(108, 92, 231, 0.10)",
+                        color: BRAND,
+                      }}
+                    >
                       Release
                     </div>
                   </div>
@@ -378,7 +401,14 @@ export default async function ReleasesPage() {
                         </div>
                       </div>
 
-                      <div className="shrink-0 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.14em] text-emerald-300">
+                      <div
+                        className="shrink-0 rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-[0.14em]"
+                        style={{
+                          borderColor: "rgba(108, 92, 231, 0.22)",
+                          backgroundColor: "rgba(108, 92, 231, 0.10)",
+                          color: BRAND,
+                        }}
+                      >
                         Published
                       </div>
                     </div>
@@ -390,7 +420,7 @@ export default async function ReleasesPage() {
                     <div className="grid gap-3 sm:grid-cols-3">
                       <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
                         <div className="flex items-center gap-2 text-zinc-500">
-                          <Download className="h-4 w-4 text-cyan-300" />
+                          <Download className="h-4 w-4" style={{ color: BRAND }} />
                           <span className="text-xs uppercase tracking-[0.14em]">
                             Downloads
                           </span>
@@ -402,9 +432,9 @@ export default async function ReleasesPage() {
 
                       <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
                         <div className="flex items-center gap-2 text-zinc-500">
-                          <MessageSquare className="h-4 w-4 text-cyan-300" />
+                          <MessageSquare className="h-4 w-4" style={{ color: BRAND }} />
                           <span className="text-xs uppercase tracking-[0.14em]">
-                            Kommentare
+                            Comments
                           </span>
                         </div>
                         <div className="mt-2 text-lg font-semibold text-white">
@@ -414,9 +444,9 @@ export default async function ReleasesPage() {
 
                       <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
                         <div className="flex items-center gap-2 text-zinc-500">
-                          <CalendarDays className="h-4 w-4 text-cyan-300" />
+                          <CalendarDays className="h-4 w-4" style={{ color: BRAND }} />
                           <span className="text-xs uppercase tracking-[0.14em]">
-                            Datum
+                            Date
                           </span>
                         </div>
                         <div className="mt-2 text-sm font-semibold text-white">
@@ -427,15 +457,16 @@ export default async function ReleasesPage() {
 
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
                       <div className="text-xs text-zinc-500">
-                        Veröffentlicht am {formatDateTime(release.createdAt)}
+                        Published on {formatDateTime(release.createdAt)}
                       </div>
 
                       <div className="flex items-center gap-3">
                         <Link
                           href={href}
-                          className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
+                          className="inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90"
+                          style={{ backgroundColor: BRAND }}
                         >
-                          <span>Details ansehen</span>
+                          <span>View Details</span>
                           <ArrowRight className="h-4 w-4" />
                         </Link>
                       </div>

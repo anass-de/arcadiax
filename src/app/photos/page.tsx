@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 9;
+const BRAND = "#6c5ce7";
 
 type SearchParams = Promise<{
   page?: string;
@@ -31,9 +32,9 @@ function parsePage(value?: string) {
 }
 
 function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
+  return new Intl.DateTimeFormat("en-US", {
     month: "2-digit",
+    day: "2-digit",
     year: "numeric",
   }).format(new Date(date));
 }
@@ -52,7 +53,7 @@ function Pagination({
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/10 bg-zinc-950/60 p-4">
       <div className="text-sm text-zinc-400">
-        Seite <span className="font-semibold text-white">{currentPage}</span> von{" "}
+        Page <span className="font-semibold text-white">{currentPage}</span> of{" "}
         <span className="font-semibold text-white">{totalPages}</span>
       </div>
 
@@ -67,7 +68,7 @@ function Pagination({
           }`}
         >
           <ChevronLeft className="h-4 w-4" />
-          Zurück
+          Previous
         </Link>
 
         <Link
@@ -79,7 +80,7 @@ function Pagination({
               : "border-white/10 bg-black/20 text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
           }`}
         >
-          Weiter
+          Next
           <ChevronRight className="h-4 w-4" />
         </Link>
       </div>
@@ -120,21 +121,21 @@ export default async function PhotosPage(props: {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-              <ImageIcon className="h-5 w-5 text-cyan-300" />
+              <ImageIcon className="h-5 w-5" style={{ color: BRAND }} />
             </div>
 
             <div>
               <h1 className="text-3xl font-semibold text-white sm:text-4xl">
-                Bilder
+                Photos
               </h1>
               <p className="mt-2 text-sm text-zinc-400">
-                Alle veröffentlichten Bilder mit Pagination.
+                Browse all published images with pagination.
               </p>
             </div>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-400">
-            {totalCount} Bilder insgesamt
+            {totalCount} photos total
           </div>
         </div>
       </section>
@@ -147,7 +148,7 @@ export default async function PhotosPage(props: {
 
       {photos.length === 0 ? (
         <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-8 text-zinc-400">
-          Keine Bilder verfügbar.
+          No photos available.
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -160,7 +161,7 @@ export default async function PhotosPage(props: {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={item.url}
-                  alt={item.title || "Bild"}
+                  alt={item.title || "Photo"}
                   className="aspect-video w-full object-cover transition duration-300 hover:scale-[1.02]"
                 />
               </Link>
@@ -168,7 +169,7 @@ export default async function PhotosPage(props: {
               <div className="space-y-4 p-5">
                 <div>
                   <h2 className="text-xl font-semibold text-white">
-                    {item.title || "Ohne Titel"}
+                    {item.title || "Untitled"}
                   </h2>
 
                   {item.description ? (
@@ -177,14 +178,14 @@ export default async function PhotosPage(props: {
                     </p>
                   ) : (
                     <p className="mt-2 text-sm leading-6 text-zinc-500">
-                      Keine Beschreibung vorhanden.
+                      No description available.
                     </p>
                   )}
                 </div>
 
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-xs text-zinc-500">
-                    Aktualisiert: {formatDate(item.updatedAt)}
+                    Updated: {formatDate(item.updatedAt)}
                   </div>
 
                   <Link
@@ -192,7 +193,7 @@ export default async function PhotosPage(props: {
                     target="_blank"
                     className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                   >
-                    Öffnen
+                    Open
                     <ExternalLink className="h-4 w-4" />
                   </Link>
                 </div>
