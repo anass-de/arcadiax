@@ -19,12 +19,14 @@ export async function POST(request: Request) {
 
     if (!body || typeof body !== "object") {
       return NextResponse.json(
-        { error: "Ungültige Anfrage." },
+        { error: "Invalid request." },
         { status: 400 }
       );
     }
 
-    const rawUsername = String((body as { username?: unknown }).username ?? "").trim();
+    const rawUsername = String(
+      (body as { username?: unknown }).username ?? ""
+    ).trim();
     const normalizedUsername = rawUsername.toLowerCase();
 
     const rawEmail = String((body as { email?: unknown }).email ?? "")
@@ -35,7 +37,7 @@ export async function POST(request: Request) {
 
     if (!rawUsername || !rawEmail || !rawPassword) {
       return NextResponse.json(
-        { error: "Username, E-Mail und Passwort sind erforderlich." },
+        { error: "Username, email, and password are required." },
         { status: 400 }
       );
     }
@@ -44,7 +46,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Der Username ist ungültig. Erlaubt sind 3 bis 20 Zeichen: Buchstaben, Zahlen, _ und -.",
+            "Invalid username. Allowed: 3 to 20 characters using letters, numbers, _ and -.",
         },
         { status: 400 }
       );
@@ -52,14 +54,14 @@ export async function POST(request: Request) {
 
     if (!isValidEmail(rawEmail)) {
       return NextResponse.json(
-        { error: "Bitte gib eine gültige E-Mail-Adresse ein." },
+        { error: "Please enter a valid email address." },
         { status: 400 }
       );
     }
 
     if (rawPassword.length < 8) {
       return NextResponse.json(
-        { error: "Das Passwort muss mindestens 8 Zeichen lang sein." },
+        { error: "Password must be at least 8 characters long." },
         { status: 400 }
       );
     }
@@ -75,7 +77,7 @@ export async function POST(request: Request) {
 
     if (existingUsername) {
       return NextResponse.json(
-        { error: "Dieser Username ist bereits vergeben." },
+        { error: "This username is already taken." },
         { status: 409 }
       );
     }
@@ -91,7 +93,7 @@ export async function POST(request: Request) {
 
     if (existingEmail) {
       return NextResponse.json(
-        { error: "Diese E-Mail-Adresse ist bereits registriert." },
+        { error: "This email address is already registered." },
         { status: 409 }
       );
     }
@@ -120,7 +122,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         ok: true,
-        message: "Registrierung erfolgreich.",
+        message: "Registration successful.",
         user,
       },
       { status: 201 }
@@ -129,7 +131,7 @@ export async function POST(request: Request) {
     console.error("POST /api/auth/register error:", error);
 
     return NextResponse.json(
-      { error: "Interner Serverfehler bei der Registrierung." },
+      { error: "Internal server error during registration." },
       { status: 500 }
     );
   }

@@ -37,7 +37,7 @@ function getSessionUser(
 }
 
 function normalizeUsername(value?: string) {
-  return (value ?? "").trim();
+  return (value ?? "").trim().toLowerCase();
 }
 
 function normalizeEmail(value?: string) {
@@ -48,6 +48,14 @@ function normalizePassword(value?: string) {
   return (value ?? "").trim();
 }
 
+function isValidUsername(username: string) {
+  return /^[a-zA-Z0-9_-]{3,20}$/.test(username);
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -55,14 +63,14 @@ export async function GET() {
 
     if (!sessionUser?.email) {
       return NextResponse.json(
-        { error: "Nicht eingeloggt." },
+        { error: "Not authenticated." },
         { status: 401 }
       );
     }
 
     const user = await prisma.user.findUnique({
       where: {
-        email: sessionUser.email,
+        email: sessionUser.email.toLowerCase(),
       },
       select: {
         username: true,
@@ -71,22 +79,19 @@ export async function GET() {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { error: "Benutzer wurde nicht gefunden." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
 
     return NextResponse.json({
       ok: true,
-      username: user.username ?? "",
-      email: user.email ?? "",
+      username: user.username,
+      email: user.email,
     });
   } catch (error) {
     console.error("GET /api/profile error:", error);
 
     return NextResponse.json(
-      { error: "Serverfehler beim Laden des Profils." },
+      { error: "Server error while loading the profile." },
       { status: 500 }
     );
   }
@@ -99,7 +104,7 @@ export async function PATCH(req: Request) {
 
     if (!sessionUser?.email) {
       return NextResponse.json(
-        { error: "Nicht eingeloggt." },
+        { error: "Not authenticated." },
         { status: 401 }
       );
     }
@@ -108,7 +113,7 @@ export async function PATCH(req: Request) {
 
     if (!body) {
       return NextResponse.json(
-        { error: "Ungültige Anfrage." },
+        { error: "Invalid request body." },
         { status: 400 }
       );
     }
@@ -119,51 +124,45 @@ export async function PATCH(req: Request) {
 
     if (!username) {
       return NextResponse.json(
-        { error: "Username ist erforderlich." },
+        { error: "Username is required." },
         { status: 400 }
       );
     }
 
-    if (username.length < 3) {
+    if (!isValidUsername(username)) {
       return NextResponse.json(
-        { error: "Username muss mindestens 3 Zeichen lang sein." },
-        { status: 400 }
-      );
-    }
-
-    if (username.length > 30) {
-      return NextResponse.json(
-        { error: "Username darf maximal 30 Zeichen lang sein." },
+        {
+          error:
+            "Invalid username. Allowed: 3 to 20 characters using letters, numbers, _ and -.",
+        },
         { status: 400 }
       );
     }
 
     if (!email) {
       return NextResponse.json(
-        { error: "E-Mail ist erforderlich." },
+        { error: "Email is required." },
         { status: 400 }
       );
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailRegex.test(email)) {
+    if (!isValidEmail(email)) {
       return NextResponse.json(
-        { error: "Ungültige E-Mail-Adresse." },
+        { error: "Invalid email address." },
         { status: 400 }
       );
     }
 
     if (password && password.length < 6) {
       return NextResponse.json(
-        { error: "Das Passwort muss mindestens 6 Zeichen lang sein." },
+        { error: "Password must be at least 6 characters long." },
         { status: 400 }
       );
     }
 
     const currentUser = await prisma.user.findUnique({
       where: {
-        email: sessionUser.email,
+        email: sessionUser.email.toLowerCase(),
       },
       select: {
         id: true,
@@ -173,10 +172,7 @@ export async function PATCH(req: Request) {
     });
 
     if (!currentUser) {
-      return NextResponse.json(
-        { error: "Benutzer wurde nicht gefunden." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
 
     const usernameTaken = await prisma.user.findFirst({
@@ -193,7 +189,7 @@ export async function PATCH(req: Request) {
 
     if (usernameTaken) {
       return NextResponse.json(
-        { error: "Dieser Username ist bereits vergeben." },
+        { error: "This username is already taken." },
         { status: 409 }
       );
     }
@@ -212,7 +208,7 @@ export async function PATCH(req: Request) {
 
     if (emailTaken) {
       return NextResponse.json(
-        { error: "Diese E-Mail-Adresse ist bereits vergeben." },
+        { error: "This email address is already in use." },
         { status: 409 }
       );
     }
@@ -239,13 +235,13 @@ export async function PATCH(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      message: "Profil wurde erfolgreich aktualisiert.",
+      message: "Profile updated successfully.",
     });
   } catch (error) {
     console.error("PATCH /api/profile error:", error);
 
     return NextResponse.json(
-      { error: "Serverfehler beim Speichern des Profils." },
+      { error: "Server error while saving the profile." },
       { status: 500 }
     );
   }

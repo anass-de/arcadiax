@@ -24,11 +24,11 @@ export const authOptions: NextAuthOptions = {
 
       credentials: {
         identifier: {
-          label: "Username oder E-Mail",
+          label: "Username or Email",
           type: "text",
         },
         password: {
-          label: "Passwort",
+          label: "Password",
           type: "password",
         },
       },
@@ -70,12 +70,12 @@ export const authOptions: NextAuthOptions = {
 
         return {
           id: user.id,
-          name: user.name ?? user.username ?? undefined,
+          name: user.name ?? user.username,
           email: user.email,
           image: user.image,
           role: user.role ?? "USER",
-          username: user.username ?? undefined,
-        } as any;
+          username: user.username,
+        };
       },
     }),
   ],
@@ -83,9 +83,11 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.sub = (user as any).id ?? token.sub;
-        (token as any).role = (user as any).role ?? "USER";
-        (token as any).username = (user as any).username ?? null;
+        token.sub = (user as { id?: string }).id ?? token.sub;
+        (token as { role?: string }).role =
+          (user as { role?: string }).role ?? "USER";
+        (token as { username?: string | null }).username =
+          (user as { username?: string | null }).username ?? null;
       }
 
       if (token.email) {
@@ -103,12 +105,12 @@ export const authOptions: NextAuthOptions = {
 
         if (dbUser) {
           token.sub = dbUser.id;
-          (token as any).role = dbUser.role ?? "USER";
-          (token as any).username = dbUser.username ?? null;
-          token.name = dbUser.name ?? dbUser.username ?? token.name;
-          token.email = dbUser.email ?? token.email;
-          (token as any).picture =
-            dbUser.image ?? (token as any).picture ?? null;
+          (token as { role?: string }).role = dbUser.role ?? "USER";
+          (token as { username?: string | null }).username =
+            dbUser.username ?? null;
+          token.name = dbUser.name ?? dbUser.username;
+          token.email = dbUser.email;
+          (token as { picture?: string | null }).picture = dbUser.image ?? null;
         }
       }
 
@@ -117,13 +119,17 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = token.sub ?? "";
-        (session.user as any).role = (token as any).role ?? "USER";
-        (session.user as any).username = (token as any).username ?? null;
-        session.user.name = token.name ?? session.user.name;
-        session.user.email = token.email ?? session.user.email;
+        (session.user as { id?: string }).id = token.sub ?? "";
+        (session.user as { role?: string }).role =
+          (token as { role?: string }).role ?? "USER";
+        (session.user as { username?: string | null }).username =
+          (token as { username?: string | null }).username ?? null;
+        session.user.name = token.name ?? null;
+        session.user.email = token.email ?? null;
         session.user.image =
-          ((token as any).picture as string | null) ?? session.user.image;
+          ((token as { picture?: string | null }).picture ?? null) as
+            | string
+            | null;
       }
 
       return session;

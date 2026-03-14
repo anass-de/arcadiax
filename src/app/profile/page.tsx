@@ -26,9 +26,9 @@ type ProfileComment = {
 };
 
 type ProfileUser = {
-  username: string | null;
+  username: string;
   name: string | null;
-  email: string | null;
+  email: string;
   role: "ADMIN" | "USER";
   createdAt: Date;
   comments: ProfileComment[];
@@ -90,7 +90,7 @@ export default async function ProfilePage() {
 
   const user: ProfileUser | null = await prisma.user.findUnique({
     where: {
-      email: session.user.email,
+      email: session.user.email.toLowerCase(),
     },
     select: {
       username: true,
@@ -127,21 +127,12 @@ export default async function ProfilePage() {
 
   return (
     <div className="space-y-8 lg:space-y-10">
+      {/* Profile Header */}
       <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black px-6 py-8 shadow-xl shadow-black/15 sm:px-8 sm:py-10 lg:px-10 lg:py-12">
-        <div className="pointer-events-none absolute inset-0">
-          <div
-            className="absolute -left-16 top-0 h-56 w-56 rounded-full blur-3xl"
-            style={{ backgroundColor: "rgba(108, 92, 231, 0.16)" }}
-          />
-          <div className="absolute right-0 top-8 h-64 w-64 rounded-full bg-white/[0.03] blur-3xl" />
-          <div
-            className="absolute bottom-0 left-1/3 h-44 w-44 rounded-full blur-3xl"
-            style={{ backgroundColor: "rgba(108, 92, 231, 0.08)" }}
-          />
-        </div>
 
         <div className="relative flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex items-start gap-4">
+          <div className="flex min-w-0 items-start gap-4">
+
             <div
               className="flex h-16 w-16 shrink-0 items-center justify-center rounded-3xl border border-white/10 text-lg font-semibold text-white"
               style={{ backgroundColor: "rgba(108, 92, 231, 0.12)" }}
@@ -149,7 +140,7 @@ export default async function ProfilePage() {
               {initials}
             </div>
 
-            <div>
+            <div className="min-w-0">
               <div
                 className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em]"
                 style={{
@@ -162,13 +153,12 @@ export default async function ProfilePage() {
                 My Profile
               </div>
 
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+              <h1 className="mt-4 truncate text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                 {displayName}
               </h1>
 
               <p className="mt-2 max-w-2xl text-sm leading-7 text-zinc-400 sm:text-base">
-                Overview of your account details, role, and recent activity on
-                ArcadiaX.
+                Overview of your account details and activity on ArcadiaX.
               </p>
             </div>
           </div>
@@ -184,7 +174,9 @@ export default async function ProfilePage() {
         </div>
       </section>
 
+      {/* Profile Info */}
       <section className="grid gap-4 md:grid-cols-3">
+
         <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
           <div className="mb-4 inline-flex rounded-2xl border border-white/10 bg-black/20 p-3">
             <UserIcon className="h-5 w-5" style={{ color: BRAND }} />
@@ -192,8 +184,8 @@ export default async function ProfilePage() {
           <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
             Username
           </div>
-          <div className="mt-3 text-xl font-semibold text-white">
-            {user.username || "—"}
+          <div className="mt-3 break-all text-xl font-semibold text-white">
+            {user.username}
           </div>
         </div>
 
@@ -205,7 +197,7 @@ export default async function ProfilePage() {
             Email
           </div>
           <div className="mt-3 break-all text-xl font-semibold text-white">
-            {user.email || "—"}
+            {user.email}
           </div>
         </div>
 
@@ -223,16 +215,24 @@ export default async function ProfilePage() {
             Member since {formatDate(user.createdAt)}
           </div>
         </div>
+
       </section>
 
+      {/* Comments */}
       <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
+
         <div className="mb-6 flex items-center gap-3">
           <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
             <MessageSquare className="h-5 w-5" style={{ color: BRAND }} />
           </div>
+
           <div>
-            <div className="text-sm font-medium text-zinc-500">Activity</div>
-            <h2 className="text-2xl font-semibold text-white">My Comments</h2>
+            <div className="text-sm font-medium text-zinc-500">
+              Activity
+            </div>
+            <h2 className="text-2xl font-semibold text-white">
+              My Comments
+            </h2>
           </div>
         </div>
 
@@ -265,6 +265,7 @@ export default async function ProfilePage() {
             ))}
           </div>
         )}
+
       </section>
     </div>
   );

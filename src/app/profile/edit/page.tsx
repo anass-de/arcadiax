@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import type { CSSProperties, FormEvent } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -64,8 +65,7 @@ export default function EditProfilePage() {
         setUsername("username" in data ? data.username : "");
         setEmail("email" in data ? data.email : "");
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Unknown error.";
+        const message = err instanceof Error ? err.message : "Unknown error.";
 
         if (active) {
           setError(message);
@@ -153,13 +153,16 @@ export default function EditProfilePage() {
       setPasswordRepeat("");
       router.refresh();
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Unknown error.";
+      const message = err instanceof Error ? err.message : "Unknown error.";
       setError(message);
     } finally {
       setSaving(false);
     }
   }
+
+  const inputStyle: CSSProperties = {
+    borderColor: "rgba(255,255,255,0.10)",
+  };
 
   return (
     <div className="space-y-8 lg:space-y-10">
@@ -247,13 +250,8 @@ export default function EditProfilePage() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:bg-black"
-                  style={
-                    {
-                      "--tw-ring-color": "transparent",
-                      borderColor: "rgba(255,255,255,0.10)",
-                    } as React.CSSProperties
-                  }
+                  className="w-full rounded-2xl border bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:bg-black focus:border-[rgba(108,92,231,0.35)]"
+                  style={inputStyle}
                   placeholder="Your username"
                 />
               </div>
@@ -284,7 +282,8 @@ export default function EditProfilePage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:bg-black"
+                  className="w-full rounded-2xl border bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:bg-black focus:border-[rgba(108,92,231,0.35)]"
+                  style={inputStyle}
                   placeholder="your@email.com"
                 />
               </div>
@@ -318,7 +317,8 @@ export default function EditProfilePage() {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:bg-black"
+                    className="w-full rounded-2xl border bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:bg-black focus:border-[rgba(108,92,231,0.35)]"
+                    style={inputStyle}
                     placeholder="New password"
                   />
                 </div>
@@ -335,7 +335,8 @@ export default function EditProfilePage() {
                     type="password"
                     value={passwordRepeat}
                     onChange={(e) => setPasswordRepeat(e.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:bg-black"
+                    className="w-full rounded-2xl border bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:bg-black focus:border-[rgba(108,92,231,0.35)]"
+                    style={inputStyle}
                     placeholder="Repeat password"
                   />
                 </div>
