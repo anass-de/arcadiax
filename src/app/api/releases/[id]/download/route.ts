@@ -14,7 +14,7 @@ type RouteContext = {
 
 type SessionUser = {
   id?: string | null;
-  role?: string | null;
+  role?: "ADMIN" | "USER" | null;
   email?: string | null;
   name?: string | null;
 };
@@ -37,11 +37,13 @@ function getSessionUser(
 
 function getClientIp(request: NextRequest) {
   const forwardedFor = request.headers.get("x-forwarded-for");
+
   if (forwardedFor) {
     return forwardedFor.split(",")[0]?.trim() || null;
   }
 
   const realIp = request.headers.get("x-real-ip");
+
   if (realIp) {
     return realIp.trim();
   }
@@ -56,15 +58,19 @@ function buildRedirectUrl(fileUrl: string, request: NextRequest) {
     return null;
   }
 
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      return new URL(trimmed).toString();
+    }
 
-  if (trimmed.startsWith("/")) {
-    return new URL(trimmed, request.url).toString();
-  }
+    if (trimmed.startsWith("/")) {
+      return new URL(trimmed, request.url).toString();
+    }
 
-  return new URL(`/${trimmed}`, request.url).toString();
+    return new URL(`/${trimmed}`, request.url).toString();
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -72,24 +78,30 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const session = await getServerSession(authOptions);
     const user = getSessionUser(session);
 
+    const { id } = await context.params;
+    const releaseId = id?.trim();
+
     if (!user?.id) {
       const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("callbackUrl", request.nextUrl.pathname);
+      const callbackPath = releaseId
+        ? `/api/releases/${releaseId}/download`
+        : request.nextUrl.pathname;
+
+      loginUrl.searchParams.set("callbackUrl", callbackPath);
+
       return NextResponse.redirect(loginUrl, { status: 307 });
     }
 
-    const { id } = await context.params;
-
-    if (!id?.trim()) {
+    if (!releaseId) {
       return NextResponse.json(
-        { error: "Invalid release ID." },
+        { error: "Ungültige Release-ID." },
         { status: 400 }
       );
     }
 
     const release = await prisma.release.findFirst({
       where: {
-        id,
+        id: releaseId,
         status: "PUBLISHED",
       },
       select: {
@@ -100,15 +112,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     if (!release) {
       return NextResponse.json(
-        { error: "Release not found or not published." },
+        { error: "Release wurde nicht gefunden oder ist nicht veröffentlicht." },
         { status: 404 }
       );
     }
 
     if (!release.fileUrl?.trim()) {
       return NextResponse.json(
-        { error: "No file is attached to this release." },
+        { error: "Diesem Release ist keine Datei zugeordnet." },
         { status: 400 }
+      );
+    }
+
+    const redirectUrl = buildRedirectUrl(release.fileUrl, request);
+
+    if (!redirectUrl) {
+      return NextResponse.json(
+        { error: "Ungültige Download-URL." },
+        { status: 500 }
       );
     }
 
@@ -134,23 +155,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }),
     ]);
 
-    const redirectUrl = buildRedirectUrl(release.fileUrl, request);
-
-    if (!redirectUrl) {
-      return NextResponse.json(
-        { error: "Invalid download URL." },
-        { status: 500 }
-      );
-    }
-
     return NextResponse.redirect(redirectUrl, {
       status: 307,
     });
   } catch (error) {
-    console.error("Download API error:", error);
+    console.error("GET /api/releases/[id]/download error:", error);
 
     return NextResponse.json(
-      { error: "Internal server error while starting the download." },
+      { error: "Interner Serverfehler beim Starten des Downloads." },
       { status: 500 }
     );
   }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -14,7 +15,7 @@ type RouteContext = {
 
 type SessionUser = {
   id?: string | null;
-  role?: string | null;
+  role?: "ADMIN" | "USER" | null;
   email?: string | null;
   name?: string | null;
 };
@@ -51,7 +52,10 @@ async function requireAdmin() {
   if (!user?.id || user.role !== "ADMIN") {
     return {
       ok: false as const,
-      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      response: NextResponse.json(
+        { error: "Nicht autorisiert." },
+        { status: 401 }
+      ),
     };
   }
 
@@ -83,6 +87,12 @@ function redirectToUsers(
   return NextResponse.redirect(url, 303);
 }
 
+async function revalidateUserAdminViews() {
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/users");
+  revalidatePath("/api/admin/users");
+}
+
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const auth = await requireAdmin();
@@ -93,8 +103,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const currentUserId = auth.user.id;
     const { id } = await context.params;
+    const targetUserId = id?.trim();
 
-    if (!id?.trim()) {
+    if (!targetUserId) {
       return NextResponse.json(
         { error: "Ungültige Benutzer-ID." },
         { status: 400 }
@@ -113,7 +124,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       );
     }
 
-    if (currentUserId === id) {
+    if (currentUserId === targetUserId) {
       return NextResponse.json(
         { error: "Du kannst deine eigene Rolle hier nicht ändern." },
         { status: 400 }
@@ -121,22 +132,25 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     const existingUser = await prisma.user.findUnique({
-      where: { id },
+      where: { id: targetUserId },
       select: {
         id: true,
         role: true,
+        username: true,
+        name: true,
+        email: true,
       },
     });
 
     if (!existingUser) {
       return NextResponse.json(
-        { error: "Benutzer nicht gefunden." },
+        { error: "Benutzer wurde nicht gefunden." },
         { status: 404 }
       );
     }
 
     const updatedUser = await prisma.user.update({
-      where: { id },
+      where: { id: targetUserId },
       data: {
         role,
       },
@@ -150,8 +164,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       },
     });
 
+    await revalidateUserAdminViews();
+
     return NextResponse.json({
-      message: "Rolle erfolgreich aktualisiert.",
+      ok: true,
+      message: "Rolle wurde erfolgreich aktualisiert.",
       user: updatedUser,
     });
   } catch (error) {
@@ -169,13 +186,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const auth = await requireAdmin();
 
     if (!auth.ok) {
-      return auth.response;
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("callbackUrl", "/dashboard/users");
+      return NextResponse.redirect(loginUrl, 303);
     }
 
     const currentUserId = auth.user.id;
     const { id } = await context.params;
+    const targetUserId = id?.trim();
 
-    if (!id?.trim()) {
+    if (!targetUserId) {
       return redirectToUsers(request, undefined, "invalid_user");
     }
 
@@ -188,12 +208,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return redirectToUsers(request, undefined, "invalid_role");
     }
 
-    if (currentUserId === id) {
+    if (currentUserId === targetUserId) {
       return redirectToUsers(request, undefined, "cannot_change_own_role");
     }
 
     const existingUser = await prisma.user.findUnique({
-      where: { id },
+      where: { id: targetUserId },
       select: {
         id: true,
       },
@@ -204,11 +224,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     await prisma.user.update({
-      where: { id },
+      where: { id: targetUserId },
       data: {
         role,
       },
     });
+
+    await revalidateUserAdminViews();
 
     return redirectToUsers(request, "role_updated");
   } catch (error) {

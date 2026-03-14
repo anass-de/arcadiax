@@ -5,17 +5,55 @@ import bcrypt from "bcryptjs";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+export const runtime = "nodejs";
+
+type SessionUser = {
+  id?: string | null;
+  email?: string | null;
+  role?: "ADMIN" | "USER" | null;
+  name?: string | null;
+};
+
 type UpdateBody = {
   username?: string;
   email?: string;
   password?: string;
 };
 
+function getSessionUser(
+  session: Awaited<ReturnType<typeof getServerSession>>
+): SessionUser | null {
+  if (!session) {
+    return null;
+  }
+
+  const maybeSession = session as { user?: unknown };
+
+  if (!maybeSession.user || typeof maybeSession.user !== "object") {
+    return null;
+  }
+
+  return maybeSession.user as SessionUser;
+}
+
+function normalizeUsername(value?: string) {
+  return (value ?? "").trim();
+}
+
+function normalizeEmail(value?: string) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function normalizePassword(value?: string) {
+  return (value ?? "").trim();
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
+    const sessionUser = getSessionUser(session);
 
-    if (!session?.user?.email) {
+    if (!sessionUser?.email) {
       return NextResponse.json(
         { error: "Nicht eingeloggt." },
         { status: 401 }
@@ -24,7 +62,7 @@ export async function GET() {
 
     const user = await prisma.user.findUnique({
       where: {
-        email: session.user.email,
+        email: sessionUser.email,
       },
       select: {
         username: true,
@@ -34,12 +72,13 @@ export async function GET() {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Benutzer nicht gefunden." },
+        { error: "Benutzer wurde nicht gefunden." },
         { status: 404 }
       );
     }
 
     return NextResponse.json({
+      ok: true,
       username: user.username ?? "",
       email: user.email ?? "",
     });
@@ -56,19 +95,27 @@ export async function GET() {
 export async function PATCH(req: Request) {
   try {
     const session = await getServerSession(authOptions);
+    const sessionUser = getSessionUser(session);
 
-    if (!session?.user?.email) {
+    if (!sessionUser?.email) {
       return NextResponse.json(
         { error: "Nicht eingeloggt." },
         { status: 401 }
       );
     }
 
-    const body = (await req.json()) as UpdateBody;
+    const body = (await req.json().catch(() => null)) as UpdateBody | null;
 
-    const username = body.username?.trim() ?? "";
-    const email = body.email?.trim().toLowerCase() ?? "";
-    const password = body.password?.trim() ?? "";
+    if (!body) {
+      return NextResponse.json(
+        { error: "Ungültige Anfrage." },
+        { status: 400 }
+      );
+    }
+
+    const username = normalizeUsername(body.username);
+    const email = normalizeEmail(body.email);
+    const password = normalizePassword(body.password);
 
     if (!username) {
       return NextResponse.json(
@@ -80,6 +127,13 @@ export async function PATCH(req: Request) {
     if (username.length < 3) {
       return NextResponse.json(
         { error: "Username muss mindestens 3 Zeichen lang sein." },
+        { status: 400 }
+      );
+    }
+
+    if (username.length > 30) {
+      return NextResponse.json(
+        { error: "Username darf maximal 30 Zeichen lang sein." },
         { status: 400 }
       );
     }
@@ -102,14 +156,14 @@ export async function PATCH(req: Request) {
 
     if (password && password.length < 6) {
       return NextResponse.json(
-        { error: "Passwort muss mindestens 6 Zeichen lang sein." },
+        { error: "Das Passwort muss mindestens 6 Zeichen lang sein." },
         { status: 400 }
       );
     }
 
     const currentUser = await prisma.user.findUnique({
       where: {
-        email: session.user.email,
+        email: sessionUser.email,
       },
       select: {
         id: true,
@@ -120,7 +174,7 @@ export async function PATCH(req: Request) {
 
     if (!currentUser) {
       return NextResponse.json(
-        { error: "Benutzer nicht gefunden." },
+        { error: "Benutzer wurde nicht gefunden." },
         { status: 404 }
       );
     }
@@ -158,7 +212,7 @@ export async function PATCH(req: Request) {
 
     if (emailTaken) {
       return NextResponse.json(
-        { error: "Diese E-Mail ist bereits vergeben." },
+        { error: "Diese E-Mail-Adresse ist bereits vergeben." },
         { status: 409 }
       );
     }
@@ -185,7 +239,7 @@ export async function PATCH(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      message: "Profil erfolgreich aktualisiert.",
+      message: "Profil wurde erfolgreich aktualisiert.",
     });
   } catch (error) {
     console.error("PATCH /api/profile error:", error);

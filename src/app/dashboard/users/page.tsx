@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import {
@@ -23,6 +24,11 @@ type SearchParams = Promise<{
 
 type PageProps = {
   searchParams: SearchParams;
+};
+
+type SessionUser = {
+  id?: string | null;
+  role?: "ADMIN" | "USER" | null;
 };
 
 type UserRole = "ADMIN" | "USER";
@@ -60,7 +66,7 @@ function formatDate(date: Date) {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).format(date);
+  }).format(new Date(date));
 }
 
 function getDisplayName(user: {
@@ -109,12 +115,13 @@ export default async function DashboardUsersPage({
   searchParams,
 }: PageProps) {
   const session = await getServerSession(authOptions);
+  const sessionUser = session?.user as SessionUser | undefined;
 
   if (!session?.user) {
-    redirect("/login");
+    redirect("/login?callbackUrl=/dashboard/users");
   }
 
-  if (session.user.role !== "ADMIN") {
+  if (sessionUser?.role !== "ADMIN") {
     redirect("/");
   }
 
@@ -182,15 +189,15 @@ export default async function DashboardUsersPage({
     commentCount: user._count.comments,
     releaseCount: user._count.releases,
     mediaCount: user._count.mediaItems,
-    isSelf: session.user.id === user.id,
+    isSelf: sessionUser?.id === user.id,
   }));
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black p-6 shadow-xl shadow-black/15 sm:p-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-xs font-medium uppercase tracking-[0.24em] text-blue-200">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
               <Shield className="h-4 w-4" />
               Benutzerverwaltung
             </div>
@@ -199,9 +206,9 @@ export default async function DashboardUsersPage({
               <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                 Benutzer verwalten
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/60 sm:text-base">
-                Benutzerrollen anpassen, Aktivität ansehen und problematische
-                Accounts im passenden ArcadiaX Stil verwalten.
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-zinc-400 sm:text-base">
+                Benutzerrollen anpassen, Aktivität einsehen und problematische
+                Accounts direkt im ArcadiaX Admin-Bereich verwalten.
               </p>
             </div>
           </div>
@@ -209,71 +216,74 @@ export default async function DashboardUsersPage({
       </section>
 
       {statusMessage ? (
-        <div className="rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 px-5 py-4 text-sm text-emerald-200">
+        <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/10 px-5 py-4 text-sm text-emerald-200">
           {statusMessage}
         </div>
       ) : null}
 
       {errorMessage ? (
-        <div className="rounded-[24px] border border-red-500/20 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+        <div className="rounded-3xl border border-red-500/20 bg-red-500/10 px-5 py-4 text-sm text-red-200">
           {errorMessage}
         </div>
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
           <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-              <Users className="h-5 w-5 text-blue-300" />
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <Users className="h-5 w-5 text-cyan-300" />
             </div>
-            <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+            <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
               Gesamt
             </div>
           </div>
+
           <div className="mt-4 text-3xl font-semibold text-white">
             {totalUsers}
           </div>
-          <div className="mt-2 text-sm text-white/50">Alle Benutzerkonten</div>
+          <div className="mt-2 text-sm text-zinc-400">Alle Benutzerkonten</div>
         </div>
 
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
           <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-              <Crown className="h-5 w-5 text-blue-300" />
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <Crown className="h-5 w-5 text-cyan-300" />
             </div>
-            <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+            <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
               Admins
             </div>
           </div>
+
           <div className="mt-4 text-3xl font-semibold text-white">
             {totalAdmins}
           </div>
-          <div className="mt-2 text-sm text-white/50">Administratoren</div>
+          <div className="mt-2 text-sm text-zinc-400">Administratoren</div>
         </div>
 
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
           <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-              <UserIcon className="h-5 w-5 text-blue-300" />
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <UserIcon className="h-5 w-5 text-cyan-300" />
             </div>
-            <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+            <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
               User
             </div>
           </div>
+
           <div className="mt-4 text-3xl font-semibold text-white">
             {totalNormalUsers}
           </div>
-          <div className="mt-2 text-sm text-white/50">Normale Benutzer</div>
+          <div className="mt-2 text-sm text-zinc-400">Normale Benutzer</div>
         </div>
       </section>
 
-      <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+      <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
         <div className="mb-5 flex items-center gap-3">
-          <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-            <Search className="h-5 w-5 text-blue-300" />
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <Search className="h-5 w-5 text-cyan-300" />
           </div>
           <div>
-            <div className="text-sm font-medium text-white/50">Filter</div>
+            <div className="text-sm font-medium text-zinc-500">Filter</div>
             <h2 className="text-2xl font-semibold text-white">
               Suche und Auswahl
             </h2>
@@ -284,7 +294,7 @@ export default async function DashboardUsersPage({
           <div>
             <label
               htmlFor="q"
-              className="mb-2 block text-sm font-medium text-white/70"
+              className="mb-2 block text-sm font-medium text-zinc-300"
             >
               Suche
             </label>
@@ -293,14 +303,14 @@ export default async function DashboardUsersPage({
               name="q"
               defaultValue={q}
               placeholder="Nach Username, Name oder E-Mail suchen..."
-              className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
+              className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/40 focus:bg-zinc-900"
             />
           </div>
 
           <div>
             <label
               htmlFor="role"
-              className="mb-2 block text-sm font-medium text-white/70"
+              className="mb-2 block text-sm font-medium text-zinc-300"
             >
               Rolle
             </label>
@@ -308,7 +318,7 @@ export default async function DashboardUsersPage({
               id="role"
               name="role"
               defaultValue={roleFilter}
-              className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/30"
+              className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40 focus:bg-zinc-900"
             >
               <option value="all">Alle</option>
               <option value="ADMIN">ADMIN</option>
@@ -319,17 +329,17 @@ export default async function DashboardUsersPage({
           <div className="flex gap-3">
             <button
               type="submit"
-              className="inline-flex items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/12 px-5 py-3 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18"
+              className="inline-flex items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90"
             >
               Anwenden
             </button>
 
-            <a
+            <Link
               href="/dashboard/users"
-              className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+              className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
             >
               Reset
-            </a>
+            </Link>
           </div>
         </form>
       </section>
@@ -337,7 +347,7 @@ export default async function DashboardUsersPage({
       <section className="space-y-6">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <div className="text-sm uppercase tracking-[0.22em] text-white/40">
+            <div className="text-sm uppercase tracking-[0.22em] text-zinc-500">
               Accounts
             </div>
             <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
@@ -345,13 +355,13 @@ export default async function DashboardUsersPage({
             </h2>
           </div>
 
-          <div className="hidden rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-white/55 md:block">
+          <div className="hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-400 md:block">
             {preparedUsers.length} Treffer
           </div>
         </div>
 
         {preparedUsers.length === 0 ? (
-          <div className="rounded-[30px] border border-white/10 bg-white/[0.03] p-8 text-white/55">
+          <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-8 text-zinc-400">
             Keine Benutzer gefunden.
           </div>
         ) : (

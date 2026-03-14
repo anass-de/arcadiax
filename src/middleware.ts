@@ -9,7 +9,14 @@ async function getAuthToken(req: NextRequest) {
   });
 }
 
-export async function proxy(req: NextRequest) {
+function buildLoginUrl(req: NextRequest) {
+  const loginUrl = new URL("/login", req.url);
+  const callbackUrl = `${req.nextUrl.pathname}${req.nextUrl.search}`;
+  loginUrl.searchParams.set("callbackUrl", callbackUrl);
+  return loginUrl;
+}
+
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Immer erlauben: Next intern + statische Dateien
@@ -25,7 +32,7 @@ export async function proxy(req: NextRequest) {
 
   const token = await getAuthToken(req);
   const isLoggedIn = !!token;
-  const role = String(token?.role ?? "").toUpperCase();
+  const role = String((token as { role?: string } | null)?.role ?? "").toUpperCase();
   const isAdmin = role === "ADMIN";
 
   // Login/Register nur für Gäste
@@ -38,25 +45,36 @@ export async function proxy(req: NextRequest) {
   }
 
   // Öffentliche Seiten
-  if (pathname === "/" || pathname.startsWith("/releases")) {
+  if (
+    pathname === "/" ||
+    pathname.startsWith("/releases") ||
+    pathname.startsWith("/videos") ||
+    pathname.startsWith("/photos")
+  ) {
     return NextResponse.next();
   }
 
   // Öffentliche APIs
   if (
     pathname.startsWith("/api/auth") ||
-    pathname === "/api/register" ||
-    pathname.startsWith("/api/releases") ||
-    pathname.startsWith("/api/comments") ||
-    pathname.startsWith("/api/download")
+    pathname.startsWith("/api/releases")
   ) {
+    return NextResponse.next();
+  }
+
+  // Profil-API nur für eingeloggte Nutzer
+  if (pathname.startsWith("/api/profile")) {
+    if (!isLoggedIn) {
+      return NextResponse.json({ error: "Nicht autorisiert." }, { status: 401 });
+    }
+
     return NextResponse.next();
   }
 
   // Profile nur für eingeloggte Nutzer
   if (pathname.startsWith("/profile")) {
     if (!isLoggedIn) {
-      return NextResponse.redirect(new URL("/login", req.url));
+      return NextResponse.redirect(buildLoginUrl(req));
     }
 
     return NextResponse.next();
@@ -65,7 +83,7 @@ export async function proxy(req: NextRequest) {
   // Dashboard strikt nur für Admins
   if (pathname.startsWith("/dashboard")) {
     if (!isLoggedIn) {
-      return NextResponse.redirect(new URL("/login", req.url));
+      return NextResponse.redirect(buildLoginUrl(req));
     }
 
     if (!isAdmin) {
@@ -78,11 +96,11 @@ export async function proxy(req: NextRequest) {
   // Admin-API strikt nur für Admins
   if (pathname.startsWith("/api/admin")) {
     if (!isLoggedIn) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Nicht autorisiert." }, { status: 401 });
     }
 
     if (!isAdmin) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: "Kein Zugriff." }, { status: 403 });
     }
 
     return NextResponse.next();

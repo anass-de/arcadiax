@@ -1,6 +1,15 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
+import {
+  ArrowRight,
+  Download,
+  FolderOpen,
+  MessageSquare,
+  Package,
+  Plus,
+  Users,
+} from "lucide-react";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -12,7 +21,7 @@ type SessionUser = {
 type DashboardRelease = {
   id: string;
   title: string;
-  slug: string;
+  slug: string | null;
   version: string;
   status: "DRAFT" | "PUBLISHED";
   createdAt: Date;
@@ -30,7 +39,7 @@ type DashboardComment = {
   };
   release: {
     id: string;
-    slug: string;
+    slug: string | null;
     title: string;
     version: string;
   };
@@ -45,8 +54,78 @@ type DashboardUser = {
   createdAt: Date;
 };
 
-function getReleaseHref(release: { id: string; slug: string }) {
-  return release.slug?.trim() ? `/releases/${release.slug}` : `/releases/${release.id}`;
+function getReleaseHref(release: { id: string; slug: string | null }) {
+  return release.slug?.trim()
+    ? `/releases/${release.slug}`
+    : `/releases/${release.id}`;
+}
+
+function formatDateTime(date: Date) {
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(date));
+}
+
+function getCommentAuthor(comment: DashboardComment) {
+  return (
+    comment.user.username ||
+    comment.user.name ||
+    comment.user.email ||
+    "Unbekannt"
+  );
+}
+
+function getUserDisplayName(user: DashboardUser) {
+  return user.username || user.name || user.email || "Unbekannt";
+}
+
+function getStatusLabel(status: DashboardRelease["status"]) {
+  return status === "PUBLISHED" ? "Veröffentlicht" : "Entwurf";
+}
+
+function getStatCards(data: {
+  releaseCount: number;
+  mediaCount: number;
+  commentCount: number;
+  userCount: number;
+  totalDownloadCount: number;
+}) {
+  return [
+    {
+      title: "Releases",
+      value: data.releaseCount,
+      hint: "Alle Versionen im System",
+      icon: Package,
+    },
+    {
+      title: "Medien",
+      value: data.mediaCount,
+      hint: "Bilder und Videos für Home",
+      icon: FolderOpen,
+    },
+    {
+      title: "Kommentare",
+      value: data.commentCount,
+      hint: "Community Aktivität gesamt",
+      icon: MessageSquare,
+    },
+    {
+      title: "Benutzer",
+      value: data.userCount,
+      hint: "Registrierte Accounts",
+      icon: Users,
+    },
+    {
+      title: "Downloads",
+      value: data.totalDownloadCount,
+      hint: "Gesamte Release Downloads",
+      icon: Download,
+    },
+  ];
 }
 
 export default async function DashboardPage() {
@@ -119,7 +198,7 @@ export default async function DashboardPage() {
     }),
     prisma.user.findMany({
       orderBy: { createdAt: "desc" },
-      take: 5,
+      take: 6,
       select: {
         id: true,
         username: true,
@@ -137,41 +216,44 @@ export default async function DashboardPage() {
 
   const totalDownloadCount = totalDownloads._sum.downloadCount ?? 0;
 
+  const statCards = getStatCards({
+    releaseCount,
+    mediaCount,
+    commentCount,
+    userCount,
+    totalDownloadCount,
+  });
+
   return (
     <div className="space-y-6">
       <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-5">
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
-          <p className="text-sm text-zinc-400">Releases</p>
-          <p className="mt-3 text-3xl font-bold text-white">{releaseCount}</p>
-          <p className="mt-2 text-xs text-zinc-500">Alle Versionen im System</p>
-        </div>
+        {statCards.map((card) => {
+          const Icon = card.icon;
 
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
-          <p className="text-sm text-zinc-400">Medien</p>
-          <p className="mt-3 text-3xl font-bold text-white">{mediaCount}</p>
-          <p className="mt-2 text-xs text-zinc-500">Bilder und Videos für Home</p>
-        </div>
+          return (
+            <div
+              key={card.title}
+              className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 to-zinc-950 p-5 shadow-lg shadow-black/10"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm text-zinc-400">{card.title}</p>
+                  <p className="mt-3 text-3xl font-bold tracking-tight text-white">
+                    {card.value}
+                  </p>
+                  <p className="mt-2 text-xs text-zinc-500">{card.hint}</p>
+                </div>
 
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
-          <p className="text-sm text-zinc-400">Kommentare</p>
-          <p className="mt-3 text-3xl font-bold text-white">{commentCount}</p>
-          <p className="mt-2 text-xs text-zinc-500">Community Aktivität gesamt</p>
-        </div>
-
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
-          <p className="text-sm text-zinc-400">Benutzer</p>
-          <p className="mt-3 text-3xl font-bold text-white">{userCount}</p>
-          <p className="mt-2 text-xs text-zinc-500">Registrierte Accounts</p>
-        </div>
-
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
-          <p className="text-sm text-zinc-400">Downloads</p>
-          <p className="mt-3 text-3xl font-bold text-white">{totalDownloadCount}</p>
-          <p className="mt-2 text-xs text-zinc-500">Gesamte Release Downloads</p>
-        </div>
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/15 bg-cyan-400/10 text-cyan-300">
+                  <Icon className="h-5 w-5" />
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </section>
 
-      <section className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black p-6 shadow-xl shadow-black/15">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-semibold text-white">Schnellzugriff</h2>
@@ -183,22 +265,25 @@ export default async function DashboardPage() {
           <div className="flex flex-wrap gap-3">
             <Link
               href="/dashboard/releases/new"
-              className="rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition hover:opacity-90"
             >
+              <Plus className="h-4 w-4" />
               Neues Release
             </Link>
 
             <Link
               href="/dashboard/media"
-              className="rounded-2xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-800 hover:text-white"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
             >
+              <FolderOpen className="h-4 w-4" />
               Media verwalten
             </Link>
 
             <Link
               href="/dashboard/comments"
-              className="rounded-2xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-800 hover:text-white"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
             >
+              <MessageSquare className="h-4 w-4" />
               Kommentare prüfen
             </Link>
           </div>
@@ -206,34 +291,42 @@ export default async function DashboardPage() {
       </section>
 
       <section className="grid gap-6 2xl:grid-cols-2">
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
           <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-xl font-semibold text-white">Letzte Releases</h2>
+            <div>
+              <h2 className="text-xl font-semibold text-white">
+                Letzte Releases
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Neueste Versionen und ihr Status.
+              </p>
+            </div>
 
             <Link
               href="/dashboard/releases"
-              className="text-sm text-zinc-400 hover:text-white"
+              className="inline-flex items-center gap-2 text-sm text-zinc-400 transition hover:text-white"
             >
               Alle ansehen
+              <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
 
           {typedLatestReleases.length === 0 ? (
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-sm text-zinc-400">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-zinc-400">
               Noch keine Releases vorhanden.
             </div>
           ) : (
             <div className="space-y-4">
-              {typedLatestReleases.map((release: DashboardRelease) => (
+              {typedLatestReleases.map((release) => (
                 <div
                   key={release.id}
-                  className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
+                  className="rounded-2xl border border-white/10 bg-black/20 p-4 transition hover:border-zinc-700"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <Link
                         href={getReleaseHref(release)}
-                        className="text-base font-semibold text-white hover:text-blue-400"
+                        className="text-base font-semibold text-white transition hover:text-cyan-300"
                       >
                         {release.title}
                       </Link>
@@ -243,7 +336,7 @@ export default async function DashboardPage() {
                       </p>
 
                       <p className="mt-2 text-xs text-zinc-500">
-                        {new Date(release.createdAt).toLocaleString("de-DE")}
+                        {formatDateTime(release.createdAt)}
                       </p>
                     </div>
 
@@ -251,11 +344,11 @@ export default async function DashboardPage() {
                       <span
                         className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
                           release.status === "PUBLISHED"
-                            ? "bg-green-500/15 text-green-300"
-                            : "bg-zinc-800 text-zinc-300"
+                            ? "border border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                            : "border border-zinc-700 bg-zinc-800/70 text-zinc-300"
                         }`}
                       >
-                        {release.status}
+                        {getStatusLabel(release.status)}
                       </span>
 
                       <p className="mt-3 text-sm text-zinc-400">
@@ -263,41 +356,61 @@ export default async function DashboardPage() {
                       </p>
                     </div>
                   </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Link
+                      href={`/dashboard/releases/${release.id}/edit`}
+                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+                    >
+                      Bearbeiten
+                    </Link>
+
+                    <Link
+                      href={getReleaseHref(release)}
+                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+                    >
+                      Öffentlich ansehen
+                    </Link>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
           <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-xl font-semibold text-white">Letzte Kommentare</h2>
+            <div>
+              <h2 className="text-xl font-semibold text-white">
+                Letzte Kommentare
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Aktuelle Aktivität aus der Community.
+              </p>
+            </div>
 
             <Link
               href="/dashboard/comments"
-              className="text-sm text-zinc-400 hover:text-white"
+              className="inline-flex items-center gap-2 text-sm text-zinc-400 transition hover:text-white"
             >
               Zur Moderation
+              <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
 
           {typedLatestComments.length === 0 ? (
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-sm text-zinc-400">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-zinc-400">
               Noch keine Kommentare vorhanden.
             </div>
           ) : (
             <div className="space-y-4">
-              {typedLatestComments.map((comment: DashboardComment) => {
-                const author =
-                  comment.user.username ||
-                  comment.user.name ||
-                  comment.user.email ||
-                  "Unbekannt";
+              {typedLatestComments.map((comment) => {
+                const author = getCommentAuthor(comment);
 
                 return (
                   <div
                     key={comment.id}
-                    className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
+                    className="rounded-2xl border border-white/10 bg-black/20 p-4 transition hover:border-zinc-700"
                   >
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm text-zinc-300">
@@ -305,19 +418,23 @@ export default async function DashboardPage() {
                         bei{" "}
                         <Link
                           href={getReleaseHref(comment.release)}
-                          className="text-blue-400 hover:text-blue-300"
+                          className="font-medium text-cyan-400 transition hover:text-cyan-300"
                         >
                           {comment.release.title}
                         </Link>
                       </p>
 
                       <p className="text-xs text-zinc-500">
-                        {new Date(comment.createdAt).toLocaleString("de-DE")}
+                        {formatDateTime(comment.createdAt)}
                       </p>
                     </div>
 
-                    <p className="mt-3 line-clamp-3 text-sm text-zinc-400">
+                    <p className="mt-3 line-clamp-3 text-sm leading-6 text-zinc-400">
                       {comment.content}
+                    </p>
+
+                    <p className="mt-3 text-xs text-zinc-500">
+                      Release Version: {comment.release.version}
                     </p>
                   </div>
                 );
@@ -327,49 +444,58 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
+      <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
         <div className="mb-5 flex items-center justify-between gap-4">
-          <h2 className="text-xl font-semibold text-white">Neue Benutzer</h2>
+          <div>
+            <h2 className="text-xl font-semibold text-white">Neue Benutzer</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Kürzlich registrierte Accounts im System.
+            </p>
+          </div>
 
           <Link
             href="/dashboard/users"
-            className="text-sm text-zinc-400 hover:text-white"
+            className="inline-flex items-center gap-2 text-sm text-zinc-400 transition hover:text-white"
           >
             Benutzerverwaltung
+            <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
 
         {typedRecentUsers.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-sm text-zinc-400">
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-zinc-400">
             Noch keine Benutzer vorhanden.
           </div>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {typedRecentUsers.map((user: DashboardUser) => {
-              const displayName =
-                user.username || user.name || user.email || "Unbekannt";
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {typedRecentUsers.map((user) => {
+              const displayName = getUserDisplayName(user);
 
               return (
                 <div
                   key={user.id}
-                  className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
+                  className="rounded-2xl border border-white/10 bg-black/20 p-4 transition hover:border-zinc-700"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-medium text-white">{displayName}</p>
-                      <p className="mt-1 text-sm text-zinc-400">
+                      <p className="truncate font-medium text-white">
+                        {displayName}
+                      </p>
+
+                      <p className="mt-1 truncate text-sm text-zinc-400">
                         {user.email || "—"}
                       </p>
+
                       <p className="mt-2 text-xs text-zinc-500">
-                        {new Date(user.createdAt).toLocaleString("de-DE")}
+                        {formatDateTime(user.createdAt)}
                       </p>
                     </div>
 
                     <span
                       className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
                         user.role === "ADMIN"
-                          ? "bg-blue-500/15 text-blue-300"
-                          : "bg-zinc-800 text-zinc-300"
+                          ? "border border-cyan-500/20 bg-cyan-500/10 text-cyan-300"
+                          : "border border-zinc-700 bg-zinc-800/70 text-zinc-300"
                       }`}
                     >
                       {user.role}

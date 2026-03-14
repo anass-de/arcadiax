@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -14,7 +15,7 @@ type RouteContext = {
 
 type SessionUser = {
   id?: string | null;
-  role?: string | null;
+  role?: "ADMIN" | "USER" | null;
   email?: string | null;
   name?: string | null;
 };
@@ -49,7 +50,10 @@ async function requireAdmin() {
   if (!user?.id || user.role !== "ADMIN") {
     return {
       ok: false as const,
-      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      response: NextResponse.json(
+        { error: "Nicht autorisiert." },
+        { status: 401 }
+      ),
     };
   }
 
@@ -77,6 +81,12 @@ function redirectToUsers(
   return NextResponse.redirect(url, 303);
 }
 
+async function revalidateUserAdminViews() {
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/users");
+  revalidatePath("/api/admin/users");
+}
+
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
     const auth = await requireAdmin();
@@ -86,8 +96,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     const { id } = await context.params;
+    const targetUserId = id?.trim();
 
-    if (!id?.trim()) {
+    if (!targetUserId) {
       return NextResponse.json(
         { error: "Ungültige Benutzer-ID." },
         { status: 400 }
@@ -95,7 +106,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     const user = await prisma.user.findUnique({
-      where: { id },
+      where: { id: targetUserId },
       include: {
         _count: {
           select: {
@@ -113,12 +124,15 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Benutzer nicht gefunden." },
+        { error: "Benutzer wurde nicht gefunden." },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ user });
+    return NextResponse.json({
+      ok: true,
+      user,
+    });
   } catch (error) {
     console.error("GET /api/admin/users/[id] error:", error);
 
@@ -139,15 +153,16 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     const currentUserId = auth.user.id;
     const { id } = await context.params;
+    const targetUserId = id?.trim();
 
-    if (!id?.trim()) {
+    if (!targetUserId) {
       return NextResponse.json(
         { error: "Ungültige Benutzer-ID." },
         { status: 400 }
       );
     }
 
-    if (currentUserId === id) {
+    if (currentUserId === targetUserId) {
       return NextResponse.json(
         { error: "Du kannst deinen eigenen Account nicht löschen." },
         { status: 400 }
@@ -155,26 +170,52 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     }
 
     const existingUser = await prisma.user.findUnique({
-      where: { id },
+      where: { id: targetUserId },
       select: {
         id: true,
-        role: true,
       },
     });
 
     if (!existingUser) {
       return NextResponse.json(
-        { error: "Benutzer nicht gefunden." },
+        { error: "Benutzer wurde nicht gefunden." },
         { status: 404 }
       );
     }
 
-    await prisma.user.delete({
-      where: { id },
-    });
+    await prisma.$transaction([
+      prisma.comment.deleteMany({
+        where: { userId: targetUserId },
+      }),
+      prisma.releaseLike.deleteMany({
+        where: { userId: targetUserId },
+      }),
+      prisma.download.deleteMany({
+        where: { userId: targetUserId },
+      }),
+      prisma.session.deleteMany({
+        where: { userId: targetUserId },
+      }),
+      prisma.account.deleteMany({
+        where: { userId: targetUserId },
+      }),
+      prisma.homeMedia.deleteMany({
+        where: { authorId: targetUserId },
+      }),
+      prisma.release.deleteMany({
+        where: { authorId: targetUserId },
+      }),
+      prisma.user.delete({
+        where: { id: targetUserId },
+      }),
+    ]);
+
+    await revalidateUserAdminViews();
 
     return NextResponse.json({
-      message: "Benutzer erfolgreich gelöscht.",
+      ok: true,
+      message: "Benutzer wurde erfolgreich gelöscht.",
+      deletedId: targetUserId,
     });
   } catch (error) {
     console.error("DELETE /api/admin/users/[id] error:", error);
@@ -191,11 +232,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const auth = await requireAdmin();
 
     if (!auth.ok) {
-      return auth.response;
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("callbackUrl", "/dashboard/users");
+      return NextResponse.redirect(loginUrl, 303);
     }
 
     const currentUserId = auth.user.id;
     const { id } = await context.params;
+    const targetUserId = id?.trim();
+
     const formData = await request.formData();
     const method = String(formData.get("_method") ?? "")
       .trim()
@@ -205,16 +250,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return redirectToUsers(request, undefined, "invalid_method");
     }
 
-    if (!id?.trim()) {
+    if (!targetUserId) {
       return redirectToUsers(request, undefined, "invalid_user");
     }
 
-    if (currentUserId === id) {
+    if (currentUserId === targetUserId) {
       return redirectToUsers(request, undefined, "cannot_delete_self");
     }
 
     const existingUser = await prisma.user.findUnique({
-      where: { id },
+      where: { id: targetUserId },
       select: {
         id: true,
       },
@@ -224,9 +269,34 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return redirectToUsers(request, undefined, "not_found");
     }
 
-    await prisma.user.delete({
-      where: { id },
-    });
+    await prisma.$transaction([
+      prisma.comment.deleteMany({
+        where: { userId: targetUserId },
+      }),
+      prisma.releaseLike.deleteMany({
+        where: { userId: targetUserId },
+      }),
+      prisma.download.deleteMany({
+        where: { userId: targetUserId },
+      }),
+      prisma.session.deleteMany({
+        where: { userId: targetUserId },
+      }),
+      prisma.account.deleteMany({
+        where: { userId: targetUserId },
+      }),
+      prisma.homeMedia.deleteMany({
+        where: { authorId: targetUserId },
+      }),
+      prisma.release.deleteMany({
+        where: { authorId: targetUserId },
+      }),
+      prisma.user.delete({
+        where: { id: targetUserId },
+      }),
+    ]);
+
+    await revalidateUserAdminViews();
 
     return redirectToUsers(request, "deleted");
   } catch (error) {

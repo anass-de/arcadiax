@@ -22,7 +22,7 @@ const IMAGE_MIME_TYPES = new Set([
 
 type SessionUser = {
   id?: string | null;
-  role?: string | null;
+  role?: "USER" | "ADMIN" | null;
   email?: string | null;
   name?: string | null;
 };
@@ -37,7 +37,9 @@ type AdminSessionUser = {
 function getSessionUser(
   session: Awaited<ReturnType<typeof getServerSession>>
 ): SessionUser | null {
-  if (!session) return null;
+  if (!session) {
+    return null;
+  }
 
   const maybeSession = session as { user?: unknown };
 
@@ -53,9 +55,12 @@ async function requireAdmin(request: NextRequest) {
   const user = getSessionUser(session);
 
   if (!user?.id || user.role !== "ADMIN") {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("callbackUrl", "/dashboard/releases/new");
+
     return {
       ok: false as const,
-      response: NextResponse.redirect(new URL("/login", request.url), 303),
+      response: NextResponse.redirect(loginUrl, 303),
     };
   }
 
@@ -71,15 +76,16 @@ function normalizeOptionalText(value: FormDataEntryValue | null) {
 }
 
 function slugify(value: string) {
-  return (
+  const slug =
     value
       .normalize("NFKD")
       .replace(/[^\w\s-]+/g, "")
       .trim()
       .toLowerCase()
       .replace(/[\s_-]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "release"
-  );
+      .replace(/^-+|-+$/g, "") || "release";
+
+  return slug.slice(0, 120);
 }
 
 function sanitizeFileName(fileName: string) {
@@ -173,28 +179,69 @@ async function uploadFileToStorage(args: {
 }
 
 async function removeFilesFromStorage(filePaths: string[]) {
-  if (filePaths.length === 0) return;
+  if (filePaths.length === 0) {
+    return;
+  }
 
   const supabase = getSupabaseAdmin();
   const bucket = getStorageBucket();
 
-  const { error } = await supabase.storage.from(bucket).remove(filePaths);
+  const uniquePaths = [...new Set(filePaths.filter(Boolean))];
+
+  if (uniquePaths.length === 0) {
+    return;
+  }
+
+  const { error } = await supabase.storage.from(bucket).remove(uniquePaths);
 
   if (error) {
-    console.error("Konnte Dateien aus Supabase Storage nicht löschen:", error.message);
+    console.error(
+      "Konnte Dateien aus Supabase Storage nicht löschen:",
+      error.message
+    );
   }
-}
-
-function redirectToNewWithSuccess(request: NextRequest, message: string) {
-  const url = new URL("/dashboard/releases/new", request.url);
-  url.searchParams.set("success", message);
-  return NextResponse.redirect(url, 303);
 }
 
 function redirectToNewWithError(request: NextRequest, message: string) {
   const url = new URL("/dashboard/releases/new", request.url);
   url.searchParams.set("error", message);
   return NextResponse.redirect(url, 303);
+}
+
+function redirectToEditWithSuccess(
+  request: NextRequest,
+  releaseId: string,
+  message: string
+) {
+  const url = new URL(`/dashboard/releases/${releaseId}/edit`, request.url);
+  url.searchParams.set("success", message);
+  return NextResponse.redirect(url, 303);
+}
+
+function validateImageFile(file: File) {
+  const imageMime = file.type?.trim();
+
+  if (!imageMime || !IMAGE_MIME_TYPES.has(imageMime)) {
+    throw new Error(
+      "Ungültiges Bildformat. Erlaubt sind JPG, PNG, WEBP, GIF, AVIF und SVG."
+    );
+  }
+
+  if (file.size > MAX_IMAGE_SIZE) {
+    throw new Error("Das Bild ist zu groß. Maximal erlaubt sind 10 MB.");
+  }
+}
+
+function validateReleaseFile(file: File) {
+  if (file.size <= 0) {
+    throw new Error("Bitte wähle eine Release-Datei aus.");
+  }
+
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error(
+      "Die Release-Datei ist zu groß. Maximal erlaubt sind 1 GB."
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -233,17 +280,21 @@ export async function POST(request: NextRequest) {
 
     const fileEntry = formData.get("file");
 
-    if (!(fileEntry instanceof File) || fileEntry.size <= 0) {
+    if (!(fileEntry instanceof File)) {
       return redirectToNewWithError(
         request,
         "Bitte wähle eine Release-Datei aus."
       );
     }
 
-    if (fileEntry.size > MAX_FILE_SIZE) {
+    try {
+      validateReleaseFile(fileEntry);
+    } catch (error) {
       return redirectToNewWithError(
         request,
-        "Die Release-Datei ist zu groß. Maximal erlaubt sind 1 GB."
+        error instanceof Error
+          ? error.message
+          : "Die Release-Datei ist ungültig."
       );
     }
 
@@ -252,19 +303,12 @@ export async function POST(request: NextRequest) {
       imageEntry instanceof File && imageEntry.size > 0 ? imageEntry : null;
 
     if (imageFile) {
-      const imageMime = imageFile.type?.trim();
-
-      if (!imageMime || !IMAGE_MIME_TYPES.has(imageMime)) {
+      try {
+        validateImageFile(imageFile);
+      } catch (error) {
         return redirectToNewWithError(
           request,
-          "Ungültiges Bildformat. Erlaubt sind JPG, PNG, WEBP, GIF, AVIF und SVG."
-        );
-      }
-
-      if (imageFile.size > MAX_IMAGE_SIZE) {
-        return redirectToNewWithError(
-          request,
-          "Das Bild ist zu groß. Maximal erlaubt sind 10 MB."
+          error instanceof Error ? error.message : "Das Bild ist ungültig."
         );
       }
     }
@@ -316,13 +360,13 @@ export async function POST(request: NextRequest) {
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/releases");
     revalidatePath("/dashboard/releases/new");
+    revalidatePath(`/dashboard/releases/${createdRelease.id}/edit`);
     revalidatePath("/releases");
     revalidatePath(`/releases/${createdRelease.slug}`);
-    revalidatePath(`/dashboard/releases/${createdRelease.id}`);
-    revalidatePath(`/dashboard/releases/${createdRelease.id}/edit`);
 
-    return redirectToNewWithSuccess(
+    return redirectToEditWithSuccess(
       request,
+      createdRelease.id,
       createdRelease.status === "PUBLISHED"
         ? "Release wurde erfolgreich erstellt und veröffentlicht."
         : "Release wurde erfolgreich als Entwurf gespeichert."
@@ -334,7 +378,9 @@ export async function POST(request: NextRequest) {
 
     return redirectToNewWithError(
       request,
-      "Beim Erstellen des Releases ist ein Fehler aufgetreten."
+      error instanceof Error
+        ? error.message
+        : "Beim Erstellen des Releases ist ein Fehler aufgetreten."
     );
   }
 }

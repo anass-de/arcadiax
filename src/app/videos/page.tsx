@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Film, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Film } from "lucide-react";
 
 import { prisma } from "@/lib/prisma";
 
@@ -30,6 +30,14 @@ function parsePage(value?: string) {
   return Math.floor(parsed);
 }
 
+function formatDate(date: Date) {
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(date));
+}
+
 function Pagination({
   currentPage,
   totalPages,
@@ -42,9 +50,9 @@ function Pagination({
   if (totalPages <= 1) return null;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
-      <div className="text-sm text-white/60">
-        Page <span className="font-semibold text-white">{currentPage}</span> of{" "}
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/10 bg-zinc-950/60 p-4">
+      <div className="text-sm text-zinc-400">
+        Seite <span className="font-semibold text-white">{currentPage}</span> von{" "}
         <span className="font-semibold text-white">{totalPages}</span>
       </div>
 
@@ -54,12 +62,12 @@ function Pagination({
           aria-disabled={currentPage <= 1}
           className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-medium transition ${
             currentPage <= 1
-              ? "pointer-events-none border-white/10 bg-white/[0.03] text-white/30"
-              : "border-white/10 bg-[#07090f] text-white hover:border-blue-400/40 hover:bg-blue-500/10"
+              ? "pointer-events-none border-white/10 bg-white/5 text-zinc-600"
+              : "border-white/10 bg-black/20 text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
           }`}
         >
           <ChevronLeft className="h-4 w-4" />
-          Previous
+          Zurück
         </Link>
 
         <Link
@@ -67,11 +75,11 @@ function Pagination({
           aria-disabled={currentPage >= totalPages}
           className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-medium transition ${
             currentPage >= totalPages
-              ? "pointer-events-none border-white/10 bg-white/[0.03] text-white/30"
-              : "border-white/10 bg-[#07090f] text-white hover:border-blue-400/40 hover:bg-blue-500/10"
+              ? "pointer-events-none border-white/10 bg-white/5 text-zinc-600"
+              : "border-white/10 bg-black/20 text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
           }`}
         >
-          Next
+          Weiter
           <ChevronRight className="h-4 w-4" />
         </Link>
       </div>
@@ -108,25 +116,25 @@ export default async function VideosPage(props: {
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
-      <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black p-6 shadow-xl shadow-black/15 sm:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-              <Film className="h-5 w-5 text-blue-300" />
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <Film className="h-5 w-5 text-cyan-300" />
             </div>
 
             <div>
               <h1 className="text-3xl font-semibold text-white sm:text-4xl">
                 Videos
               </h1>
-              <p className="mt-2 text-sm text-white/60">
-                Browse all published videos with pagination.
+              <p className="mt-2 text-sm text-zinc-400">
+                Alle veröffentlichten Videos mit Pagination.
               </p>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white/60">
-            {totalCount} videos total
+          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-400">
+            {totalCount} Videos insgesamt
           </div>
         </div>
       </section>
@@ -138,15 +146,15 @@ export default async function VideosPage(props: {
       />
 
       {videos.length === 0 ? (
-        <div className="rounded-[30px] border border-white/10 bg-white/[0.03] p-8 text-white/55">
-          No videos available.
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-8 text-zinc-400">
+          Keine Videos verfügbar.
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {videos.map((item: VideoItem) => (
             <article
               key={item.id}
-              className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] transition hover:border-blue-400/20 hover:bg-white/[0.05]"
+              className="overflow-hidden rounded-3xl border border-white/10 bg-zinc-950/60 transition hover:border-zinc-700 hover:bg-zinc-900/70"
             >
               <div className="bg-black">
                 <video
@@ -160,36 +168,31 @@ export default async function VideosPage(props: {
               <div className="space-y-4 p-5">
                 <div>
                   <h2 className="text-xl font-semibold text-white">
-                    {item.title || "Untitled"}
+                    {item.title || "Ohne Titel"}
                   </h2>
 
                   {item.description ? (
-                    <p className="mt-2 text-sm leading-6 text-white/60">
+                    <p className="mt-2 text-sm leading-6 text-zinc-400">
                       {item.description}
                     </p>
                   ) : (
-                    <p className="mt-2 text-sm leading-6 text-white/35">
-                      No description available.
+                    <p className="mt-2 text-sm leading-6 text-zinc-500">
+                      Keine Beschreibung vorhanden.
                     </p>
                   )}
                 </div>
 
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs text-white/40">
-                    Updated:{" "}
-                    {new Intl.DateTimeFormat("en-US", {
-                      month: "2-digit",
-                      day: "2-digit",
-                      year: "numeric",
-                    }).format(item.updatedAt)}
+                  <div className="text-xs text-zinc-500">
+                    Aktualisiert: {formatDate(item.updatedAt)}
                   </div>
 
                   <Link
                     href={item.url}
                     target="_blank"
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-[#07090f] px-3 py-2 text-sm text-white/75 transition hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-white"
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                   >
-                    Open
+                    Öffnen
                     <ExternalLink className="h-4 w-4" />
                   </Link>
                 </div>

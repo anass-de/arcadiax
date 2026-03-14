@@ -24,26 +24,26 @@ type ReleasePageProps = {
 };
 
 function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "2-digit",
+  return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
+    month: "2-digit",
     year: "numeric",
-  }).format(date);
+  }).format(new Date(date));
 }
 
 function formatDateTime(date: Date) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "2-digit",
+  return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
+    month: "2-digit",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(date);
+  }).format(new Date(date));
 }
 
 function getSafeDescription(text?: string | null) {
   if (!text?.trim()) {
-    return "No description has been added for this release yet.";
+    return "Für dieses Release wurde noch keine Beschreibung hinterlegt.";
   }
 
   return text;
@@ -124,7 +124,7 @@ export async function generateMetadata({ params }: ReleasePageProps) {
 
   if (!release) {
     return {
-      title: "Release Not Found | ArcadiaX",
+      title: "Release nicht gefunden | ArcadiaX",
     };
   }
 
@@ -132,7 +132,7 @@ export async function generateMetadata({ params }: ReleasePageProps) {
     title: `${release.title} ${release.version} | ArcadiaX`,
     description:
       release.description?.slice(0, 160) ||
-      `Release page for ${release.title} ${release.version} on ArcadiaX.`,
+      `Release-Seite für ${release.title} ${release.version} auf ArcadiaX.`,
   };
 }
 
@@ -158,36 +158,36 @@ export default async function ReleaseDetailPage({
 
   return (
     <div className="space-y-8 lg:space-y-10">
-      <section className="relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.03] px-6 py-8 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:px-8 sm:py-10 lg:px-10 lg:py-12">
+      <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black px-6 py-8 shadow-xl shadow-black/15 sm:px-8 sm:py-10 lg:px-10 lg:py-12">
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-16 top-0 h-56 w-56 rounded-full bg-blue-500/10 blur-3xl" />
-          <div className="absolute right-0 top-8 h-64 w-64 rounded-full bg-cyan-400/5 blur-3xl" />
-          <div className="absolute bottom-0 left-1/3 h-44 w-44 rounded-full bg-white/[0.03] blur-3xl" />
+          <div className="absolute -left-16 top-0 h-56 w-56 rounded-full bg-cyan-400/10 blur-3xl" />
+          <div className="absolute right-0 top-8 h-64 w-64 rounded-full bg-white/[0.03] blur-3xl" />
+          <div className="absolute bottom-0 left-1/3 h-44 w-44 rounded-full bg-cyan-500/5 blur-3xl" />
         </div>
 
         <div className="relative mb-6 flex flex-wrap items-center justify-between gap-3">
           <Link
             href="/releases"
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
           >
             <ArrowLeft className="h-4 w-4" />
-            <span>Back to Releases</span>
+            <span>Zurück zu Releases</span>
           </Link>
 
           {isAdmin ? (
             <Link
               href="/dashboard/releases"
-              className="inline-flex items-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/12 px-4 py-3 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18"
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
             >
-              <Shield className="h-4 w-4 text-blue-300" />
-              <span>Manage Releases</span>
+              <Shield className="h-4 w-4" />
+              <span>Releases verwalten</span>
             </Link>
           ) : null}
         </div>
 
         <div className="relative grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
           <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-xs font-medium uppercase tracking-[0.24em] text-blue-200">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
               <Sparkles className="h-4 w-4" />
               Release Details
             </div>
@@ -198,7 +198,7 @@ export default async function ReleaseDetailPage({
                   {release.status}
                 </div>
 
-                <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-white/50">
+                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-zinc-400">
                   Version {release.version}
                 </div>
               </div>
@@ -207,7 +207,7 @@ export default async function ReleaseDetailPage({
                 {release.title}
               </h1>
 
-              <p className="max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
+              <p className="max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg">
                 {getSafeDescription(release.description)}
               </p>
             </div>
@@ -217,10 +217,10 @@ export default async function ReleaseDetailPage({
                 isLoggedIn ? (
                   <a
                     href={downloadHref}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/12 px-5 py-3.5 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3.5 text-sm font-semibold text-black transition hover:opacity-90"
                   >
-                    <Download className="h-4 w-4 text-blue-300" />
-                    <span>Download Release</span>
+                    <Download className="h-4 w-4" />
+                    <span>Release herunterladen</span>
                   </a>
                 ) : (
                   <Link
@@ -228,21 +228,21 @@ export default async function ReleaseDetailPage({
                     className="inline-flex items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/12 px-5 py-3.5 text-sm font-semibold text-white transition hover:border-amber-400/40 hover:bg-amber-500/18"
                   >
                     <LogIn className="h-4 w-4 text-amber-300" />
-                    <span>Log in to Download</span>
+                    <span>Zum Download einloggen</span>
                   </Link>
                 )
               ) : (
-                <span className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-3.5 text-sm font-semibold text-white/45">
+                <span className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 text-sm font-semibold text-zinc-500">
                   <Download className="h-4 w-4" />
-                  <span>No Download Available</span>
+                  <span>Kein Download verfügbar</span>
                 </span>
               )}
             </div>
 
             <div className="grid gap-3 pt-2 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
-                <div className="flex items-center gap-2 text-white/45">
-                  <Download className="h-4 w-4 text-blue-300" />
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                <div className="flex items-center gap-2 text-zinc-500">
+                  <Download className="h-4 w-4 text-cyan-300" />
                   <span className="text-xs uppercase tracking-[0.14em]">
                     Downloads
                   </span>
@@ -252,11 +252,11 @@ export default async function ReleaseDetailPage({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
-                <div className="flex items-center gap-2 text-white/45">
-                  <MessageSquare className="h-4 w-4 text-blue-300" />
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                <div className="flex items-center gap-2 text-zinc-500">
+                  <MessageSquare className="h-4 w-4 text-cyan-300" />
                   <span className="text-xs uppercase tracking-[0.14em]">
-                    Comments
+                    Kommentare
                   </span>
                 </div>
                 <div className="mt-2 text-2xl font-semibold text-white">
@@ -264,11 +264,11 @@ export default async function ReleaseDetailPage({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
-                <div className="flex items-center gap-2 text-white/45">
-                  <CalendarDays className="h-4 w-4 text-blue-300" />
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                <div className="flex items-center gap-2 text-zinc-500">
+                  <CalendarDays className="h-4 w-4 text-cyan-300" />
                   <span className="text-xs uppercase tracking-[0.14em]">
-                    Published
+                    Veröffentlicht
                   </span>
                 </div>
                 <div className="mt-2 text-sm font-semibold text-white">
@@ -279,8 +279,8 @@ export default async function ReleaseDetailPage({
           </div>
 
           <div className="grid gap-4">
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07090f]">
-              <div className="flex h-[320px] w-full items-center justify-center border-b border-white/10 bg-gradient-to-br from-[#0a0d14] via-[#090b11] to-[#06080d]">
+            <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
+              <div className="flex h-[320px] w-full items-center justify-center border-b border-white/10 bg-gradient-to-br from-zinc-950 via-black to-zinc-900">
                 {hasImage ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -289,72 +289,73 @@ export default async function ReleaseDetailPage({
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="flex flex-col items-center gap-3 text-white/35">
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <ImageIcon className="h-8 w-8 text-blue-300/80" />
+                  <div className="flex flex-col items-center gap-3 text-zinc-500">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <ImageIcon className="h-8 w-8 text-cyan-300/80" />
                     </div>
-                    <span className="text-sm">No Preview Image Available</span>
+                    <span className="text-sm">Kein Vorschaubild verfügbar</span>
                   </div>
                 )}
               </div>
 
               <div className="space-y-3 p-5">
-                <div className="text-sm font-medium text-white/55">
-                  Release Overview
+                <div className="text-sm font-medium text-zinc-500">
+                  Release Übersicht
                 </div>
 
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <Package className="h-4 w-4 text-blue-300" />
-                    <span className="text-sm text-white/80">Title</span>
+                    <Package className="h-4 w-4 text-cyan-300" />
+                    <span className="text-sm text-zinc-200">Titel</span>
                   </div>
-                  <span className="max-w-[180px] truncate text-xs text-white/45">
+                  <span className="max-w-[180px] truncate text-xs text-zinc-400">
                     {release.title}
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <Sparkles className="h-4 w-4 text-blue-300" />
-                    <span className="text-sm text-white/80">Version</span>
+                    <Sparkles className="h-4 w-4 text-cyan-300" />
+                    <span className="text-sm text-zinc-200">Version</span>
                   </div>
-                  <span className="text-xs text-white/45">{release.version}</span>
+                  <span className="text-xs text-zinc-400">{release.version}</span>
                 </div>
 
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <CalendarDays className="h-4 w-4 text-blue-300" />
-                    <span className="text-sm text-white/80">Created</span>
+                    <CalendarDays className="h-4 w-4 text-cyan-300" />
+                    <span className="text-sm text-zinc-200">Erstellt</span>
                   </div>
-                  <span className="text-xs text-white/45">
+                  <span className="text-xs text-zinc-400">
                     {formatDateTime(release.createdAt)}
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <CalendarDays className="h-4 w-4 text-blue-300" />
-                    <span className="text-sm text-white/80">Updated</span>
+                    <CalendarDays className="h-4 w-4 text-cyan-300" />
+                    <span className="text-sm text-zinc-200">Aktualisiert</span>
                   </div>
-                  <span className="text-xs text-white/45">
+                  <span className="text-xs text-zinc-400">
                     {formatDateTime(release.updatedAt)}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-white/[0.04] to-white/[0.02] p-5">
-              <div className="text-sm font-medium text-white/55">
+            <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+              <div className="text-sm font-medium text-zinc-500">
                 Community Status
               </div>
               <div className="mt-2 text-lg font-semibold text-white">
                 {isLoggedIn
-                  ? "You are signed in and can download this release and join the discussion."
-                  : "You can browse this release publicly, but you need to log in to download or comment."}
+                  ? "Du bist eingeloggt und kannst dieses Release herunterladen und an der Diskussion teilnehmen."
+                  : "Du kannst dieses Release öffentlich ansehen, musst dich aber zum Download oder Kommentieren einloggen."}
               </div>
-              <p className="mt-3 text-sm leading-6 text-white/60">
-                ArcadiaX keeps release pages public for browsing, while downloads
-                and interactions are reserved for signed-in users.
+              <p className="mt-3 text-sm leading-6 text-zinc-400">
+                ArcadiaX hält Release-Seiten öffentlich zugänglich, während
+                Downloads und Interaktionen für eingeloggte Benutzer reserviert
+                sind.
               </p>
             </div>
           </div>
@@ -362,23 +363,23 @@ export default async function ReleaseDetailPage({
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
           <div className="mb-5 flex items-center gap-3">
-            <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-              <Package className="h-5 w-5 text-blue-300" />
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <Package className="h-5 w-5 text-cyan-300" />
             </div>
             <div>
-              <div className="text-sm font-medium text-white/50">
-                Description
+              <div className="text-sm font-medium text-zinc-500">
+                Beschreibung
               </div>
               <h2 className="text-2xl font-semibold text-white">
-                About This Release
+                Über dieses Release
               </h2>
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-white/10 bg-[#07090f] p-5">
-            <p className="whitespace-pre-line text-sm leading-7 text-white/70">
+          <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+            <p className="whitespace-pre-line text-sm leading-7 text-zinc-300">
               {getSafeDescription(release.description)}
             </p>
           </div>
@@ -388,10 +389,10 @@ export default async function ReleaseDetailPage({
               isLoggedIn ? (
                 <a
                   href={downloadHref}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/12 px-4 py-3 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18"
+                  className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
                 >
-                  <Download className="h-4 w-4 text-blue-300" />
-                  <span>Download Now</span>
+                  <Download className="h-4 w-4" />
+                  <span>Jetzt herunterladen</span>
                 </a>
               ) : (
                 <Link
@@ -399,52 +400,52 @@ export default async function ReleaseDetailPage({
                   className="inline-flex items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/12 px-4 py-3 text-sm font-semibold text-white transition hover:border-amber-400/40 hover:bg-amber-500/18"
                 >
                   <LogIn className="h-4 w-4 text-amber-300" />
-                  <span>Log in to Download</span>
+                  <span>Zum Download einloggen</span>
                 </Link>
               )
             ) : null}
 
             <Link
               href="/releases"
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
             >
               <ArrowLeft className="h-4 w-4" />
-              <span>More Releases</span>
+              <span>Weitere Releases</span>
             </Link>
           </div>
         </div>
 
-        <div className="rounded-[30px] border border-white/10 bg-gradient-to-br from-white/[0.04] to-white/[0.02] p-6 sm:p-8">
+        <div className="rounded-3xl border border-white/10 bg-black/20 p-6 sm:p-8">
           <div className="mb-5 flex items-center gap-3">
-            <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-              <MessageSquare className="h-5 w-5 text-blue-300" />
+            <div className="rounded-2xl border border-white/10 bg-zinc-950 p-3">
+              <MessageSquare className="h-5 w-5 text-cyan-300" />
             </div>
             <div>
-              <div className="text-sm font-medium text-white/50">
+              <div className="text-sm font-medium text-zinc-500">
                 Community
               </div>
               <h2 className="text-2xl font-semibold text-white">
-                Discussion & Feedback
+                Diskussion & Feedback
               </h2>
             </div>
           </div>
 
           {isLoggedIn ? (
-            <p className="text-sm leading-6 text-white/60">
-              Signed-in users can post comments, reply to discussions, and share
-              feedback about this release.
+            <p className="text-sm leading-6 text-zinc-400">
+              Eingeloggte Benutzer können Kommentare schreiben, auf Diskussionen
+              antworten und Feedback zu diesem Release teilen.
             </p>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm leading-6 text-white/60">
-                Comments are available for signed-in users only.
+              <p className="text-sm leading-6 text-zinc-400">
+                Kommentare sind nur für eingeloggte Benutzer verfügbar.
               </p>
               <Link
                 href="/login"
                 className="inline-flex items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/12 px-4 py-3 text-sm font-semibold text-white transition hover:border-amber-400/40 hover:bg-amber-500/18"
               >
                 <LogIn className="h-4 w-4 text-amber-300" />
-                <span>Log in to Comment</span>
+                <span>Zum Kommentieren einloggen</span>
               </Link>
             </div>
           )}

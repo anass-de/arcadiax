@@ -4,18 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
-  LayoutDashboard,
-  Package,
-  ImageIcon,
-  MessageSquare,
-  Users,
-  User,
-  LogOut,
-  LogIn,
-  UserPlus,
-  Shield,
   Film,
   House,
+  ImageIcon,
+  LayoutDashboard,
+  LogIn,
+  LogOut,
+  MessageSquare,
+  Package,
+  Shield,
+  User,
+  UserPlus,
+  Users,
 } from "lucide-react";
 
 type NavbarUser = {
@@ -30,11 +30,11 @@ type SiteNavbarProps = {
 
 function getDisplayName(user?: NavbarUser | null) {
   if (!user) return "";
-  return user.name?.trim() || user.email?.split("@")[0] || "User";
+  return user.name?.trim() || user.email?.split("@")[0] || "Benutzer";
 }
 
 function getInitials(user?: NavbarUser | null) {
-  const source = getDisplayName(user) || "U";
+  const source = getDisplayName(user) || "B";
   const parts = source.split(/\s+/).filter(Boolean);
 
   if (parts.length >= 2) {
@@ -59,27 +59,27 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
   const initials = getInitials(user);
 
   const guestLinks = [
-    { href: "/", label: "Home", icon: House },
+    { href: "/", label: "Start", icon: House },
     { href: "/releases", label: "Releases", icon: Package },
     { href: "/videos", label: "Videos", icon: Film },
-    { href: "/photos", label: "Fotos", icon: ImageIcon },
+    { href: "/photos", label: "Bilder", icon: ImageIcon },
   ];
 
   const userLinks = [
-    { href: "/", label: "Home", icon: House },
+    { href: "/", label: "Start", icon: House },
     { href: "/releases", label: "Releases", icon: Package },
     { href: "/videos", label: "Videos", icon: Film },
-    { href: "/photos", label: "Fotos", icon: ImageIcon },
+    { href: "/photos", label: "Bilder", icon: ImageIcon },
     { href: "/profile", label: "Profil", icon: User },
   ];
 
   const adminLinks = [
-    { href: "/", label: "Home", icon: House },
+    { href: "/", label: "Start", icon: House },
     { href: "/releases", label: "Releases", icon: Package },
     { href: "/videos", label: "Videos", icon: Film },
-    { href: "/photos", label: "Fotos", icon: ImageIcon },
+    { href: "/photos", label: "Bilder", icon: ImageIcon },
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/dashboard/media", label: "Home Media", icon: ImageIcon },
+    { href: "/dashboard/media", label: "Media", icon: ImageIcon },
     { href: "/dashboard/comments", label: "Kommentare", icon: MessageSquare },
     { href: "/dashboard/users", label: "Benutzer", icon: Users },
   ];
@@ -92,13 +92,13 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
         <div className="flex min-w-0 items-center gap-4">
           <Link
             href={isAdmin ? "/dashboard" : "/"}
-            className="group flex min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 transition hover:border-blue-500/30 hover:bg-white/[0.05]"
+            className="group flex min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-cyan-400/30 hover:bg-white/[0.06]"
           >
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-blue-500/25 bg-gradient-to-br from-blue-500/20 via-cyan-400/10 to-transparent shadow-[0_0_30px_rgba(59,130,246,0.14)]">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-400/15 via-white/[0.04] to-transparent shadow-[0_0_30px_rgba(34,211,238,0.12)]">
               {isAdmin ? (
-                <Shield className="h-5 w-5 text-blue-300" />
+                <Shield className="h-5 w-5 text-cyan-300" />
               ) : (
-                <Package className="h-5 w-5 text-blue-300" />
+                <Package className="h-5 w-5 text-cyan-300" />
               )}
             </div>
 
@@ -106,7 +106,7 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
               <div className="truncate text-lg font-semibold tracking-tight text-white">
                 ArcadiaX
               </div>
-              <div className="truncate text-[11px] uppercase tracking-[0.28em] text-white/45">
+              <div className="truncate text-[11px] uppercase tracking-[0.28em] text-zinc-500">
                 {isAdmin ? "Admin Console" : "Release Platform"}
               </div>
             </div>
@@ -114,7 +114,7 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
         </div>
 
         <nav className="hidden flex-1 items-center justify-center lg:flex">
-          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             {navLinks.map((item) => {
               const Icon = item.icon;
               const active = isActive(pathname, item.href);
@@ -127,16 +127,16 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
                   className={[
                     "group inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition",
                     active
-                      ? "border border-blue-500/30 bg-blue-500/12 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_10px_30px_rgba(0,0,0,0.25)]"
-                      : "border border-transparent text-white/70 hover:border-white/10 hover:bg-white/[0.05] hover:text-white",
+                      ? "border border-cyan-400/20 bg-cyan-400/10 text-white shadow-[0_0_0_1px_rgba(34,211,238,0.12),0_10px_30px_rgba(0,0,0,0.25)]"
+                      : "border border-transparent text-zinc-300 hover:border-white/10 hover:bg-white/[0.06] hover:text-white",
                   ].join(" ")}
                 >
                   <Icon
                     className={[
                       "h-4 w-4 transition",
                       active
-                        ? "text-blue-300"
-                        : "text-white/45 group-hover:text-white/80",
+                        ? "text-cyan-300"
+                        : "text-zinc-500 group-hover:text-zinc-200",
                     ].join(" ")}
                   />
                   <span>{item.label}</span>
@@ -151,7 +151,7 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
             <div className="hidden items-center gap-2 sm:flex">
               <Link
                 href="/login"
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
               >
                 <LogIn className="h-4 w-4" />
                 <span>Login</span>
@@ -159,17 +159,17 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
 
               <Link
                 href="/register"
-                className="inline-flex items-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/12 px-4 py-3 text-sm font-medium text-white transition hover:border-blue-400/40 hover:bg-blue-500/18"
+                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-medium text-black transition hover:opacity-90"
               >
-                <UserPlus className="h-4 w-4 text-blue-300" />
-                <span>Register</span>
+                <UserPlus className="h-4 w-4" />
+                <span>Registrieren</span>
               </Link>
             </div>
           ) : (
             <>
               <Link
                 href={isAdmin ? "/dashboard" : "/profile"}
-                className="hidden items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 transition hover:border-white/15 hover:bg-white/[0.05] md:flex"
+                className="hidden items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-zinc-700 hover:bg-zinc-800 md:flex"
               >
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-white/10 to-white/[0.03] text-sm font-semibold text-white">
                   {initials}
@@ -179,7 +179,7 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
                   <div className="truncate text-sm font-semibold text-white">
                     {displayName}
                   </div>
-                  <div className="truncate text-xs text-white/45">
+                  <div className="truncate text-xs text-zinc-500">
                     {isAdmin ? "Administrator" : "Angemeldet"}
                   </div>
                 </div>
@@ -188,7 +188,7 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
               <button
                 type="button"
                 onClick={() => signOut({ callbackUrl: "/login" })}
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-white/80 transition hover:border-red-500/30 hover:bg-red-500/10 hover:text-white"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:border-red-500/30 hover:bg-red-500/10 hover:text-white"
               >
                 <LogOut className="h-4 w-4" />
                 <span className="hidden sm:inline">Logout</span>
@@ -212,14 +212,14 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
                 className={[
                   "inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition",
                   active
-                    ? "border-blue-500/30 bg-blue-500/12 text-white"
-                    : "border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.05] hover:text-white",
+                    ? "border-cyan-400/20 bg-cyan-400/10 text-white"
+                    : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/[0.06] hover:text-white",
                 ].join(" ")}
               >
                 <Icon
                   className={[
                     "h-4 w-4",
-                    active ? "text-blue-300" : "text-white/45",
+                    active ? "text-cyan-300" : "text-zinc-500",
                   ].join(" ")}
                 />
                 <span>{item.label}</span>
@@ -231,7 +231,7 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
             <>
               <Link
                 href="/login"
-                className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-medium text-white/80 transition hover:bg-white/[0.05] hover:text-white"
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.06] hover:text-white"
               >
                 <LogIn className="h-4 w-4" />
                 <span>Login</span>
@@ -239,18 +239,18 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
 
               <Link
                 href="/register"
-                className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/12 px-3 py-2 text-sm font-medium text-white"
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-medium text-black transition hover:opacity-90"
               >
-                <UserPlus className="h-4 w-4 text-blue-300" />
-                <span>Register</span>
+                <UserPlus className="h-4 w-4" />
+                <span>Registrieren</span>
               </Link>
             </>
           ) : (
             <Link
               href={isAdmin ? "/dashboard" : "/profile"}
-              className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-medium text-white/80"
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-zinc-200"
             >
-              <User className="h-4 w-4 text-white/60" />
+              <User className="h-4 w-4 text-zinc-400" />
               <span>{displayName}</span>
             </Link>
           )}

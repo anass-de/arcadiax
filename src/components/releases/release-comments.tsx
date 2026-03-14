@@ -43,18 +43,20 @@ type ReleaseCommentsProps = {
 function formatDateTime(value: string) {
   const date = new Date(value);
 
-  return new Intl.DateTimeFormat("en-US", {
-    month: "2-digit",
+  return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
+    month: "2-digit",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
 }
 
-function getDisplayName(user?: CommentUser | ReleaseCommentsProps["currentUser"]) {
-  if (!user) return "Unknown User";
-  return user.username?.trim() || user.name?.trim() || "User";
+function getDisplayName(
+  user?: CommentUser | ReleaseCommentsProps["currentUser"]
+) {
+  if (!user) return "Unbekannter Benutzer";
+  return user.username?.trim() || user.name?.trim() || "Benutzer";
 }
 
 function getInitials(user?: CommentUser | ReleaseCommentsProps["currentUser"]) {
@@ -111,13 +113,15 @@ export default function ReleaseComments({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Failed to load comments.");
+        throw new Error(data?.error || "Kommentare konnten nicht geladen werden.");
       }
 
       setComments(Array.isArray(data?.comments) ? data.comments : []);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Failed to load comments.";
+        error instanceof Error
+          ? error.message
+          : "Kommentare konnten nicht geladen werden.";
 
       setLoadingError(message);
     } finally {
@@ -155,14 +159,16 @@ export default function ReleaseComments({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Failed to create comment.");
+        throw new Error(data?.error || "Kommentar konnte nicht erstellt werden.");
       }
 
       setNewComment("");
       await loadComments();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Failed to create comment.";
+        error instanceof Error
+          ? error.message
+          : "Kommentar konnte nicht erstellt werden.";
 
       setLoadingError(message);
     } finally {
@@ -193,7 +199,7 @@ export default function ReleaseComments({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Failed to create reply.");
+        throw new Error(data?.error || "Antwort konnte nicht erstellt werden.");
       }
 
       setReplyText((prev) => ({ ...prev, [parentId]: "" }));
@@ -201,7 +207,9 @@ export default function ReleaseComments({
       await loadComments();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Failed to create reply.";
+        error instanceof Error
+          ? error.message
+          : "Antwort konnte nicht erstellt werden.";
 
       setLoadingError(message);
     } finally {
@@ -229,14 +237,16 @@ export default function ReleaseComments({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Failed to update comment.");
+        throw new Error(data?.error || "Kommentar konnte nicht aktualisiert werden.");
       }
 
       setEditingId(null);
       await loadComments();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Failed to update comment.";
+        error instanceof Error
+          ? error.message
+          : "Kommentar konnte nicht aktualisiert werden.";
 
       setLoadingError(message);
     } finally {
@@ -246,7 +256,7 @@ export default function ReleaseComments({
 
   async function handleDeleteComment(commentId: string) {
     const confirmed = window.confirm(
-      "Do you really want to delete this comment?"
+      "Möchtest du diesen Kommentar wirklich löschen?"
     );
 
     if (!confirmed) return;
@@ -262,13 +272,15 @@ export default function ReleaseComments({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Failed to delete comment.");
+        throw new Error(data?.error || "Kommentar konnte nicht gelöscht werden.");
       }
 
       await loadComments();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Failed to delete comment.";
+        error instanceof Error
+          ? error.message
+          : "Kommentar konnte nicht gelöscht werden.";
 
       setLoadingError(message);
     } finally {
@@ -277,17 +289,17 @@ export default function ReleaseComments({
   }
 
   return (
-    <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+    <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-            <MessageSquare className="h-5 w-5 text-blue-300" />
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <MessageSquare className="h-5 w-5 text-cyan-300" />
           </div>
 
           <div>
-            <div className="text-sm font-medium text-white/50">Community</div>
+            <div className="text-sm font-medium text-zinc-500">Community</div>
             <h2 className="text-2xl font-semibold text-white">
-              Comments {totalCount > 0 ? `(${totalCount})` : ""}
+              Kommentare {totalCount > 0 ? `(${totalCount})` : ""}
             </h2>
           </div>
         </div>
@@ -295,26 +307,26 @@ export default function ReleaseComments({
         <button
           type="button"
           onClick={() => void loadComments()}
-          className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+          className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
         >
-          Refresh
+          Aktualisieren
         </button>
       </div>
 
       {!isLoggedIn ? (
-        <div className="mb-6 rounded-[24px] border border-white/10 bg-[#07090f] p-5">
+        <div className="mb-6 rounded-3xl border border-white/10 bg-black/20 p-5">
           <div className="text-sm font-semibold text-white">
-            Please log in to comment
+            Bitte einloggen, um zu kommentieren
           </div>
-          <p className="mt-2 text-sm leading-6 text-white/60">
-            Guests can read comments. Only signed-in users can post new comments
-            or replies.
+          <p className="mt-2 text-sm leading-6 text-zinc-400">
+            Gäste können Kommentare lesen. Nur eingeloggte Benutzer können neue
+            Kommentare oder Antworten schreiben.
           </p>
         </div>
       ) : (
-        <div className="mb-6 rounded-[24px] border border-white/10 bg-[#07090f] p-5">
+        <div className="mb-6 rounded-3xl border border-white/10 bg-black/20 p-5">
           <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-sm font-semibold text-white">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-sm font-semibold text-white">
               {getInitials(currentUser)}
             </div>
 
@@ -322,7 +334,9 @@ export default function ReleaseComments({
               <div className="truncate text-sm font-semibold text-white">
                 {getDisplayName(currentUser)}
               </div>
-              <div className="text-xs text-white/45">Write a new comment</div>
+              <div className="text-xs text-zinc-500">
+                Neuen Kommentar schreiben
+              </div>
             </div>
           </div>
 
@@ -332,23 +346,23 @@ export default function ReleaseComments({
               onChange={(e) => setNewComment(e.target.value)}
               rows={4}
               maxLength={2000}
-              placeholder="Write your comment about this release..."
-              className="w-full rounded-2xl border border-white/10 bg-[#05070b] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
+              placeholder="Schreibe deinen Kommentar zu diesem Release..."
+              className="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-black"
             />
 
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-xs text-white/40">
-                {newComment.length}/2000 characters
+              <div className="text-xs text-zinc-500">
+                {newComment.length}/2000 Zeichen
               </div>
 
               <button
                 type="button"
                 onClick={() => void handleCreateComment()}
                 disabled={posting || !newComment.trim()}
-                className="inline-flex items-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/12 px-4 py-3 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Send className="h-4 w-4 text-blue-300" />
-                <span>{posting ? "Posting..." : "Post Comment"}</span>
+                <Send className="h-4 w-4" />
+                <span>{posting ? "Wird gesendet..." : "Kommentar senden"}</span>
               </button>
             </div>
           </div>
@@ -362,16 +376,16 @@ export default function ReleaseComments({
       ) : null}
 
       {loading ? (
-        <div className="rounded-[24px] border border-white/10 bg-[#07090f] p-5 text-sm text-white/60">
-          Loading comments...
+        <div className="rounded-3xl border border-white/10 bg-black/20 p-5 text-sm text-zinc-400">
+          Kommentare werden geladen...
         </div>
       ) : comments.length === 0 ? (
-        <div className="rounded-[24px] border border-white/10 bg-[#07090f] p-5">
+        <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
           <div className="text-sm font-semibold text-white">
-            No comments yet
+            Noch keine Kommentare
           </div>
-          <p className="mt-2 text-sm leading-6 text-white/60">
-            Be the first person to say something about this release.
+          <p className="mt-2 text-sm leading-6 text-zinc-400">
+            Sei die erste Person, die etwas zu diesem Release schreibt.
           </p>
         </div>
       ) : (
@@ -388,7 +402,7 @@ export default function ReleaseComments({
             return (
               <article
                 key={comment.id}
-                className="rounded-[24px] border border-white/10 bg-[#07090f] p-5"
+                className="rounded-3xl border border-white/10 bg-black/20 p-5"
               >
                 <div className="flex items-start gap-4">
                   {comment.user?.image ? (
@@ -399,7 +413,7 @@ export default function ReleaseComments({
                       className="h-11 w-11 rounded-2xl border border-white/10 object-cover"
                     />
                   ) : (
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-sm font-semibold text-white">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-sm font-semibold text-white">
                       {getInitials(comment.user)}
                     </div>
                   )}
@@ -411,7 +425,7 @@ export default function ReleaseComments({
                           {getDisplayName(comment.user)}
                         </div>
 
-                        <div className="mt-1 inline-flex items-center gap-2 text-xs text-white/40">
+                        <div className="mt-1 inline-flex items-center gap-2 text-xs text-zinc-500">
                           <User className="h-3.5 w-3.5" />
                           <span>{formatDateTime(comment.createdAt)}</span>
                         </div>
@@ -426,10 +440,10 @@ export default function ReleaseComments({
                                 prev === comment.id ? null : comment.id
                               )
                             }
-                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                           >
                             <Reply className="h-3.5 w-3.5" />
-                            <span>Reply</span>
+                            <span>Antworten</span>
                           </button>
                         ) : null}
 
@@ -444,10 +458,10 @@ export default function ReleaseComments({
                                   [comment.id]: comment.content,
                                 }));
                               }}
-                              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+                              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                              <span>Edit</span>
+                              <span>Bearbeiten</span>
                             </button>
 
                             <button
@@ -458,7 +472,9 @@ export default function ReleaseComments({
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                               <span>
-                                {deletingId === comment.id ? "Deleting..." : "Delete"}
+                                {deletingId === comment.id
+                                  ? "Wird gelöscht..."
+                                  : "Löschen"}
                               </span>
                             </button>
                           </>
@@ -467,7 +483,7 @@ export default function ReleaseComments({
                     </div>
 
                     {isEditing ? (
-                      <div className="mt-4 rounded-2xl border border-white/10 bg-[#05070b] p-4">
+                      <div className="mt-4 rounded-2xl border border-white/10 bg-zinc-950 p-4">
                         <div className="space-y-3">
                           <textarea
                             value={editText[comment.id] || ""}
@@ -479,12 +495,12 @@ export default function ReleaseComments({
                             }
                             rows={4}
                             maxLength={2000}
-                            className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
+                            className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30"
                           />
 
                           <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="text-xs text-white/40">
-                              {(editText[comment.id] || "").length}/2000 characters
+                            <div className="text-xs text-zinc-500">
+                              {(editText[comment.id] || "").length}/2000 Zeichen
                             </div>
 
                             <div className="flex items-center gap-2">
@@ -493,10 +509,10 @@ export default function ReleaseComments({
                                 onClick={() => {
                                   setEditingId(null);
                                 }}
-                                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+                                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                               >
                                 <X className="h-3.5 w-3.5" />
-                                <span>Cancel</span>
+                                <span>Abbrechen</span>
                               </button>
 
                               <button
@@ -505,11 +521,11 @@ export default function ReleaseComments({
                                 disabled={
                                   isSavingEdit || !(editText[comment.id] || "").trim()
                                 }
-                                className="inline-flex items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/12 px-3 py-2 text-xs font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18 disabled:opacity-50"
+                                className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-black transition hover:opacity-90 disabled:opacity-50"
                               >
-                                <Save className="h-3.5 w-3.5 text-blue-300" />
+                                <Save className="h-3.5 w-3.5" />
                                 <span>
-                                  {isSavingEdit ? "Saving..." : "Save"}
+                                  {isSavingEdit ? "Speichert..." : "Speichern"}
                                 </span>
                               </button>
                             </div>
@@ -517,13 +533,13 @@ export default function ReleaseComments({
                         </div>
                       </div>
                     ) : (
-                      <p className="mt-4 whitespace-pre-line text-sm leading-7 text-white/68">
+                      <p className="mt-4 whitespace-pre-line text-sm leading-7 text-zinc-300">
                         {comment.content}
                       </p>
                     )}
 
                     {isReplyOpen ? (
-                      <div className="mt-4 rounded-2xl border border-white/10 bg-[#05070b] p-4">
+                      <div className="mt-4 rounded-2xl border border-white/10 bg-zinc-950 p-4">
                         <div className="space-y-3">
                           <textarea
                             value={replyValue}
@@ -535,13 +551,13 @@ export default function ReleaseComments({
                             }
                             rows={3}
                             maxLength={2000}
-                            placeholder={`Reply to ${getDisplayName(comment.user)}...`}
-                            className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
+                            placeholder={`Antwort an ${getDisplayName(comment.user)}...`}
+                            className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30"
                           />
 
                           <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="text-xs text-white/40">
-                              {replyValue.length}/2000 characters
+                            <div className="text-xs text-zinc-500">
+                              {replyValue.length}/2000 Zeichen
                             </div>
 
                             <div className="flex items-center gap-2">
@@ -554,20 +570,22 @@ export default function ReleaseComments({
                                     [comment.id]: "",
                                   }));
                                 }}
-                                className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+                                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                               >
-                                Cancel
+                                Abbrechen
                               </button>
 
                               <button
                                 type="button"
                                 onClick={() => void handleCreateReply(comment.id)}
                                 disabled={isReplyPosting || !replyValue.trim()}
-                                className="inline-flex items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/12 px-3 py-2 text-xs font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                <Send className="h-3.5 w-3.5 text-blue-300" />
+                                <Send className="h-3.5 w-3.5" />
                                 <span>
-                                  {isReplyPosting ? "Posting..." : "Post Reply"}
+                                  {isReplyPosting
+                                    ? "Wird gesendet..."
+                                    : "Antwort senden"}
                                 </span>
                               </button>
                             </div>
@@ -586,7 +604,7 @@ export default function ReleaseComments({
                           return (
                             <div
                               key={reply.id}
-                              className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+                              className="rounded-2xl border border-white/10 bg-white/5 p-4"
                             >
                               <div className="flex items-start gap-3">
                                 {reply.user?.image ? (
@@ -597,7 +615,7 @@ export default function ReleaseComments({
                                     className="h-9 w-9 rounded-xl border border-white/10 object-cover"
                                   />
                                 ) : (
-                                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-[#05070b] text-xs font-semibold text-white">
+                                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-zinc-950 text-xs font-semibold text-white">
                                     {getInitials(reply.user)}
                                   </div>
                                 )}
@@ -608,7 +626,7 @@ export default function ReleaseComments({
                                       <div className="truncate text-sm font-semibold text-white">
                                         {getDisplayName(reply.user)}
                                       </div>
-                                      <div className="mt-1 text-xs text-white/40">
+                                      <div className="mt-1 text-xs text-zinc-500">
                                         {formatDateTime(reply.createdAt)}
                                       </div>
                                     </div>
@@ -624,10 +642,10 @@ export default function ReleaseComments({
                                               [reply.id]: reply.content,
                                             }));
                                           }}
-                                          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-[#05070b] px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+                                          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-950 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                                         >
                                           <Pencil className="h-3.5 w-3.5" />
-                                          <span>Edit</span>
+                                          <span>Bearbeiten</span>
                                         </button>
 
                                         <button
@@ -639,8 +657,8 @@ export default function ReleaseComments({
                                           <Trash2 className="h-3.5 w-3.5" />
                                           <span>
                                             {deletingId === reply.id
-                                              ? "Deleting..."
-                                              : "Delete"}
+                                              ? "Wird gelöscht..."
+                                              : "Löschen"}
                                           </span>
                                         </button>
                                       </div>
@@ -648,7 +666,7 @@ export default function ReleaseComments({
                                   </div>
 
                                   {isEditingReply ? (
-                                    <div className="mt-3 rounded-2xl border border-white/10 bg-[#05070b] p-4">
+                                    <div className="mt-3 rounded-2xl border border-white/10 bg-zinc-950 p-4">
                                       <div className="space-y-3">
                                         <textarea
                                           value={editText[reply.id] || ""}
@@ -660,17 +678,17 @@ export default function ReleaseComments({
                                           }
                                           rows={3}
                                           maxLength={2000}
-                                          className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/30"
+                                          className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/30"
                                         />
 
                                         <div className="flex justify-end gap-2">
                                           <button
                                             type="button"
                                             onClick={() => setEditingId(null)}
-                                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/75 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+                                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
                                           >
                                             <X className="h-3.5 w-3.5" />
-                                            <span>Cancel</span>
+                                            <span>Abbrechen</span>
                                           </button>
 
                                           <button
@@ -680,20 +698,20 @@ export default function ReleaseComments({
                                               isSavingReply ||
                                               !(editText[reply.id] || "").trim()
                                             }
-                                            className="inline-flex items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/12 px-3 py-2 text-xs font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18 disabled:opacity-50"
+                                            className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-black transition hover:opacity-90 disabled:opacity-50"
                                           >
-                                            <Save className="h-3.5 w-3.5 text-blue-300" />
+                                            <Save className="h-3.5 w-3.5" />
                                             <span>
                                               {isSavingReply
-                                                ? "Saving..."
-                                                : "Save"}
+                                                ? "Speichert..."
+                                                : "Speichern"}
                                             </span>
                                           </button>
                                         </div>
                                       </div>
                                     </div>
                                   ) : (
-                                    <p className="mt-3 whitespace-pre-line text-sm leading-6 text-white/68">
+                                    <p className="mt-3 whitespace-pre-line text-sm leading-6 text-zinc-300">
                                       {reply.content}
                                     </p>
                                   )}

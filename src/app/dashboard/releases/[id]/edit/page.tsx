@@ -30,7 +30,7 @@ type PageProps = {
 
 type SessionUser = {
   id?: string | null;
-  role?: string | null;
+  role?: "USER" | "ADMIN" | null;
   email?: string | null;
   name?: string | null;
 };
@@ -58,11 +58,16 @@ function formatDateTime(date: Date) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(date);
+  }).format(new Date(date));
 }
 
 function normalizeOptional(value: FormDataEntryValue | null) {
   const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+function normalizeMessage(value?: string | null) {
+  const text = value?.trim();
   return text ? text : null;
 }
 
@@ -224,9 +229,22 @@ function buildEditUrl(
   }
 
   const queryString = query.toString();
+
   return queryString
     ? `/dashboard/releases/${releaseId}/edit?${queryString}`
     : `/dashboard/releases/${releaseId}/edit`;
+}
+
+function getStatusLabel(status: "DRAFT" | "PUBLISHED") {
+  return status === "PUBLISHED" ? "Veröffentlicht" : "Entwurf";
+}
+
+function getStatusClasses(status: "DRAFT" | "PUBLISHED") {
+  if (status === "PUBLISHED") {
+    return "border border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
+  }
+
+  return "border border-zinc-700 bg-zinc-800/70 text-zinc-300";
 }
 
 export default async function EditReleasePage({
@@ -237,7 +255,7 @@ export default async function EditReleasePage({
   const sessionUser = getSessionUser(session);
 
   if (!sessionUser) {
-    redirect("/login");
+    redirect("/login?callbackUrl=/dashboard/releases");
   }
 
   if (sessionUser.role !== "ADMIN") {
@@ -246,8 +264,8 @@ export default async function EditReleasePage({
 
   const { id } = await params;
   const resolvedSearchParams = (await searchParams) ?? {};
-  const errorMessage = resolvedSearchParams.error ?? null;
-  const successMessage = resolvedSearchParams.success ?? null;
+  const errorMessage = normalizeMessage(resolvedSearchParams.error);
+  const successMessage = normalizeMessage(resolvedSearchParams.success);
 
   const release = await prisma.release.findUnique({
     where: { id },
@@ -397,13 +415,10 @@ export default async function EditReleasePage({
       revalidatePath("/");
       revalidatePath("/dashboard");
       revalidatePath("/dashboard/releases");
-      revalidatePath(`/dashboard/releases/${releaseId}`);
       revalidatePath(`/dashboard/releases/${releaseId}/edit`);
       revalidatePath("/releases");
       revalidatePath(
-        existing.slug
-          ? `/releases/${existing.slug}`
-          : `/releases/${releaseId}`
+        existing.slug ? `/releases/${existing.slug}` : `/releases/${releaseId}`
       );
       revalidatePath(
         nextSlug ? `/releases/${nextSlug}` : `/releases/${releaseId}`
@@ -436,10 +451,10 @@ export default async function EditReleasePage({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black p-6 shadow-xl shadow-black/15 sm:p-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-xs font-medium uppercase tracking-[0.24em] text-blue-200">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
               <Shield className="h-4 w-4" />
               Release Bearbeiten
             </div>
@@ -448,7 +463,7 @@ export default async function EditReleasePage({
               <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                 {release.title}
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/60 sm:text-base">
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-zinc-400 sm:text-base">
                 Bearbeite Titel, Version und Status. Bild und Release-Datei
                 kannst du direkt vom Computer neu auswählen.
               </p>
@@ -458,7 +473,7 @@ export default async function EditReleasePage({
           <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/dashboard/releases"
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
             >
               <ArrowLeft className="h-4 w-4" />
               <span>Zurück zu Releases</span>
@@ -466,9 +481,9 @@ export default async function EditReleasePage({
 
             <Link
               href={publicHref}
-              className="inline-flex items-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-500/12 px-5 py-3 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/18"
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90"
             >
-              <ExternalLink className="h-4 w-4 text-blue-300" />
+              <ExternalLink className="h-4 w-4" />
               <span>Öffentlich ansehen</span>
             </Link>
           </div>
@@ -476,7 +491,7 @@ export default async function EditReleasePage({
       </section>
 
       {errorMessage ? (
-        <div className="flex items-start gap-3 rounded-[24px] border border-red-500/20 bg-red-500/10 p-4 text-red-100">
+        <div className="flex items-start gap-3 rounded-3xl border border-red-500/20 bg-red-500/10 p-4 text-red-100">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-300" />
           <div>
             <div className="font-semibold">Speichern fehlgeschlagen</div>
@@ -486,7 +501,7 @@ export default async function EditReleasePage({
       ) : null}
 
       {successMessage ? (
-        <div className="flex items-start gap-3 rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-100">
+        <div className="flex items-start gap-3 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-100">
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
           <div>
             <div className="font-semibold">Erfolgreich gespeichert</div>
@@ -498,68 +513,72 @@ export default async function EditReleasePage({
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
+          <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
             Status
           </div>
-          <div className="mt-2 text-2xl font-semibold text-white">
-            {release.status}
+          <div className="mt-3">
+            <span
+              className={`inline-flex rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] ${getStatusClasses(
+                release.status
+              )}`}
+            >
+              {getStatusLabel(release.status)}
+            </span>
           </div>
-          <div className="mt-2 text-sm text-white/50">
+          <div className="mt-3 text-sm text-zinc-400">
             Aktueller Veröffentlichungsstatus
           </div>
         </div>
 
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
+          <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
             Downloads
           </div>
           <div className="mt-2 text-2xl font-semibold text-white">
             {release._count.downloads}
           </div>
-          <div className="mt-2 text-sm text-white/50">
+          <div className="mt-2 text-sm text-zinc-400">
             Gesamtzahl der Downloads
           </div>
         </div>
 
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
+          <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
             Kommentare
           </div>
           <div className="mt-2 text-2xl font-semibold text-white">
             {release._count.comments}
           </div>
-          <div className="mt-2 text-sm text-white/50">
+          <div className="mt-2 text-sm text-zinc-400">
             Community-Aktivität zum Release
           </div>
         </div>
 
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
+          <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
             Aktualisiert
           </div>
           <div className="mt-2 text-lg font-semibold text-white">
             {formatDateTime(release.updatedAt)}
           </div>
-          <div className="mt-2 text-sm text-white/50">
-            Letzte Änderung
-          </div>
+          <div className="mt-2 text-sm text-zinc-400">Letzte Änderung</div>
         </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <form
           action={updateReleaseAction}
-          className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8"
+          className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8"
         >
           <input type="hidden" name="releaseId" value={release.id} />
 
           <div className="mb-6 flex items-center gap-3">
-            <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-              <FileText className="h-5 w-5 text-blue-300" />
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <FileText className="h-5 w-5 text-cyan-300" />
             </div>
             <div>
-              <div className="text-sm font-medium text-white/50">Formular</div>
+              <div className="text-sm font-medium text-zinc-500">Formular</div>
               <h2 className="text-2xl font-semibold text-white">
                 Release-Daten bearbeiten
               </h2>
@@ -571,7 +590,7 @@ export default async function EditReleasePage({
               <div>
                 <label
                   htmlFor="title"
-                  className="mb-2 block text-sm font-medium text-white/70"
+                  className="mb-2 block text-sm font-medium text-zinc-300"
                 >
                   Titel
                 </label>
@@ -580,15 +599,15 @@ export default async function EditReleasePage({
                   name="title"
                   defaultValue={release.title}
                   required
-                  className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
                   placeholder="z. B. ArcadiaX"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="version"
-                  className="mb-2 block text-sm font-medium text-white/70"
+                  className="mb-2 block text-sm font-medium text-zinc-300"
                 >
                   Version
                 </label>
@@ -597,8 +616,8 @@ export default async function EditReleasePage({
                   name="version"
                   defaultValue={release.version}
                   required
-                  className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
                   placeholder="z. B. 1.0.0"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
                 />
               </div>
             </div>
@@ -607,7 +626,7 @@ export default async function EditReleasePage({
               <div>
                 <label
                   htmlFor="slug"
-                  className="mb-2 block text-sm font-medium text-white/70"
+                  className="mb-2 block text-sm font-medium text-zinc-300"
                 >
                   Slug
                 </label>
@@ -615,10 +634,10 @@ export default async function EditReleasePage({
                   id="slug"
                   name="slug"
                   defaultValue={release.slug ?? ""}
-                  className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
                   placeholder="z. B. arcadiax"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
                 />
-                <p className="mt-2 text-xs text-white/40">
+                <p className="mt-2 text-xs text-zinc-500">
                   Optional. Wird für die öffentliche URL verwendet.
                 </p>
               </div>
@@ -626,7 +645,7 @@ export default async function EditReleasePage({
               <div>
                 <label
                   htmlFor="status"
-                  className="mb-2 block text-sm font-medium text-white/70"
+                  className="mb-2 block text-sm font-medium text-zinc-300"
                 >
                   Status
                 </label>
@@ -634,7 +653,7 @@ export default async function EditReleasePage({
                   id="status"
                   name="status"
                   defaultValue={release.status}
-                  className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/30"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/30 focus:bg-zinc-900"
                 >
                   <option value="DRAFT">DRAFT</option>
                   <option value="PUBLISHED">PUBLISHED</option>
@@ -645,7 +664,7 @@ export default async function EditReleasePage({
             <div>
               <label
                 htmlFor="description"
-                className="mb-2 block text-sm font-medium text-white/70"
+                className="mb-2 block text-sm font-medium text-zinc-300"
               >
                 Beschreibung
               </label>
@@ -654,8 +673,8 @@ export default async function EditReleasePage({
                 name="description"
                 defaultValue={release.description ?? ""}
                 rows={7}
-                className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/30"
                 placeholder="Beschreibe das Release, Funktionen, Änderungen oder Hinweise..."
+                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
               />
             </div>
 
@@ -663,8 +682,9 @@ export default async function EditReleasePage({
               <div>
                 <label
                   htmlFor="imageFile"
-                  className="mb-2 block text-sm font-medium text-white/70"
+                  className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300"
                 >
+                  <ImageIcon className="h-4 w-4 text-cyan-300" />
                   Neues Bild vom Computer
                 </label>
                 <input
@@ -672,9 +692,9 @@ export default async function EditReleasePage({
                   name="imageFile"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white file:mr-4 file:rounded-xl file:border-0 file:bg-blue-500/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-cyan-400/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
                 />
-                <p className="mt-2 text-xs text-white/40">
+                <p className="mt-2 text-xs text-zinc-500">
                   Optional. Wenn du nichts auswählst, bleibt das aktuelle Bild
                   erhalten.
                 </p>
@@ -683,17 +703,18 @@ export default async function EditReleasePage({
               <div>
                 <label
                   htmlFor="releaseFile"
-                  className="mb-2 block text-sm font-medium text-white/70"
+                  className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300"
                 >
+                  <Upload className="h-4 w-4 text-cyan-300" />
                   Neue Release-Datei vom Computer
                 </label>
                 <input
                   id="releaseFile"
                   name="releaseFile"
                   type="file"
-                  className="w-full rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-sm text-white file:mr-4 file:rounded-xl file:border-0 file:bg-blue-500/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-cyan-400/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
                 />
-                <p className="mt-2 text-xs text-white/40">
+                <p className="mt-2 text-xs text-zinc-500">
                   Optional. Wenn du nichts auswählst, bleibt die aktuelle
                   Release-Datei erhalten.
                 </p>
@@ -705,7 +726,7 @@ export default async function EditReleasePage({
 
               <Link
                 href="/dashboard/releases"
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
               >
                 <ArrowLeft className="h-4 w-4" />
                 <span>Abbrechen</span>
@@ -715,13 +736,13 @@ export default async function EditReleasePage({
         </form>
 
         <div className="space-y-6">
-          <section className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+          <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
             <div className="mb-5 flex items-center gap-3">
-              <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-                <ImageIcon className="h-5 w-5 text-blue-300" />
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                <ImageIcon className="h-5 w-5 text-cyan-300" />
               </div>
               <div>
-                <div className="text-sm font-medium text-white/50">
+                <div className="text-sm font-medium text-zinc-500">
                   Vorschau
                 </div>
                 <h2 className="text-2xl font-semibold text-white">
@@ -730,72 +751,69 @@ export default async function EditReleasePage({
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#07090f]">
-                <div className="flex h-[260px] w-full items-center justify-center border-b border-white/10 bg-gradient-to-br from-[#0a0d14] via-[#090b11] to-[#06080d]">
-                  {release.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={release.imageUrl}
-                      alt={release.title}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center gap-3 text-white/35">
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                        <ImageIcon className="h-8 w-8 text-blue-300/80" />
-                      </div>
-                      <span className="text-sm">
-                        Kein Vorschaubild vorhanden
-                      </span>
+            <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
+              <div className="flex h-[260px] w-full items-center justify-center border-b border-white/10 bg-gradient-to-br from-zinc-950 via-black to-zinc-900">
+                {release.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={release.imageUrl}
+                    alt={release.title}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-3 text-zinc-500">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <ImageIcon className="h-8 w-8 text-cyan-300/80" />
                     </div>
-                  )}
+                    <span className="text-sm">Kein Vorschaubild vorhanden</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 p-5">
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+                    Aktuelles Bild
+                  </div>
+                  <div className="mt-2 text-sm text-zinc-300">
+                    {release.imageUrl
+                      ? "Bild vorhanden"
+                      : "Kein Bild gespeichert"}
+                  </div>
                 </div>
 
-                <div className="space-y-3 p-5">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-white/40">
-                      Aktuelles Bild
-                    </div>
-                    <div className="mt-2 text-sm text-white/70">
-                      {release.imageUrl
-                        ? "Bild vorhanden"
-                        : "Kein Bild gespeichert"}
-                    </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+                    Aktuelle Datei
                   </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
-                    <div className="text-xs uppercase tracking-[0.16em] text-white/40">
-                      Aktuelle Datei
-                    </div>
-                    <div className="mt-2 text-sm text-white/70">
-                      {release.fileUrl
-                        ? "Datei vorhanden"
-                        : "Keine Datei gespeichert"}
-                    </div>
+                  <div className="mt-2 text-sm text-zinc-300">
+                    {release.fileUrl
+                      ? "Datei vorhanden"
+                      : "Keine Datei gespeichert"}
                   </div>
-
-                  {release.fileUrl ? (
-                    <Link
-                      href={release.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
-                    >
-                      <Upload className="h-4 w-4" />
-                      <span>Aktuelle Datei öffnen</span>
-                    </Link>
-                  ) : null}
                 </div>
+
+                {release.fileUrl ? (
+                  <Link
+                    href={release.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+                  >
+                    <Upload className="h-4 w-4" />
+                    <span>Aktuelle Datei öffnen</span>
+                  </Link>
+                ) : null}
               </div>
             </div>
           </section>
 
-          <section className="rounded-[30px] border border-white/10 bg-gradient-to-br from-white/[0.04] to-white/[0.02] p-6 sm:p-8">
-            <div className="text-sm font-medium text-white/50">Metadaten</div>
+          <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
+            <div className="text-sm font-medium text-zinc-500">Metadaten</div>
+
             <div className="mt-4 space-y-4">
-              <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
                   Erstellt
                 </div>
                 <div className="mt-2 text-sm font-semibold text-white">
@@ -803,8 +821,8 @@ export default async function EditReleasePage({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
                   Letzte Aktualisierung
                 </div>
                 <div className="mt-2 text-sm font-semibold text-white">
@@ -812,8 +830,8 @@ export default async function EditReleasePage({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
                   Öffentliche URL
                 </div>
                 <div className="mt-2 break-all text-sm font-semibold text-white">

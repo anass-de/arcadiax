@@ -1,7 +1,17 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  KeyRound,
+  Mail,
+  Pencil,
+  Save,
+  Shield,
+  User as UserIcon,
+} from "lucide-react";
 
 type ProfileResponse = {
   username: string;
@@ -42,7 +52,9 @@ export default function EditProfilePage() {
 
         if (!res.ok) {
           throw new Error(
-            "error" in data ? data.error || "Profil konnte nicht geladen werden." : "Profil konnte nicht geladen werden."
+            "error" in data
+              ? data.error || "Profil konnte nicht geladen werden."
+              : "Profil konnte nicht geladen werden."
           );
         }
 
@@ -53,6 +65,7 @@ export default function EditProfilePage() {
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Unbekannter Fehler.";
+
         if (active) {
           setError(message);
         }
@@ -63,7 +76,7 @@ export default function EditProfilePage() {
       }
     }
 
-    loadProfile();
+    void loadProfile();
 
     return () => {
       active = false;
@@ -148,26 +161,71 @@ export default function EditProfilePage() {
   }
 
   return (
-    <main className="min-h-screen bg-black px-4 py-10 text-white">
-      <div className="mx-auto max-w-3xl">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur">
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold tracking-tight">
-              Profil bearbeiten
-            </h1>
-            <p className="mt-2 text-sm text-white/60">
-              Hier kannst du Username, E-Mail und Passwort ändern.
-            </p>
+    <div className="space-y-8 lg:space-y-10">
+      <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black px-6 py-8 shadow-xl shadow-black/15 sm:px-8 sm:py-10 lg:px-10 lg:py-12">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -left-16 top-0 h-56 w-56 rounded-full bg-cyan-400/10 blur-3xl" />
+          <div className="absolute right-0 top-8 h-64 w-64 rounded-full bg-white/[0.03] blur-3xl" />
+          <div className="absolute bottom-0 left-1/3 h-44 w-44 rounded-full bg-cyan-500/5 blur-3xl" />
+        </div>
+
+        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+              <Shield className="h-4 w-4" />
+              Profileinstellungen
+            </div>
+
+            <div>
+              <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                Profil bearbeiten
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-zinc-400 sm:text-base">
+                Hier kannst du Username, E-Mail-Adresse und Passwort deines
+                ArcadiaX Accounts aktualisieren.
+              </p>
+            </div>
           </div>
 
-          {loading ? (
-            <div className="rounded-2xl border border-white/10 bg-black/40 p-6 text-sm text-white/60">
-              Profil wird geladen...
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div>
-                <label htmlFor="username" className="mb-2 block text-sm text-white/70">
+          <Link
+            href="/profile"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Zurück zum Profil
+          </Link>
+        </div>
+      </section>
+
+      {loading ? (
+        <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-8">
+          <div className="rounded-3xl border border-white/10 bg-black/20 p-6 text-sm text-zinc-400">
+            Profil wird geladen...
+          </div>
+        </section>
+      ) : (
+        <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-zinc-950 p-3">
+                    <UserIcon className="h-5 w-5 text-cyan-300" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-zinc-500">
+                      Benutzername
+                    </div>
+                    <h2 className="text-lg font-semibold text-white">
+                      Username ändern
+                    </h2>
+                  </div>
+                </div>
+
+                <label
+                  htmlFor="username"
+                  className="mb-2 block text-sm font-medium text-zinc-300"
+                >
                   Username
                 </label>
                 <input
@@ -175,13 +233,30 @@ export default function EditProfilePage() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-white/25"
+                  className="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-black"
                   placeholder="Dein Username"
                 />
               </div>
 
-              <div>
-                <label htmlFor="email" className="mb-2 block text-sm text-white/70">
+              <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-zinc-950 p-3">
+                    <Mail className="h-5 w-5 text-cyan-300" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-zinc-500">
+                      Kontakt
+                    </div>
+                    <h2 className="text-lg font-semibold text-white">
+                      E-Mail ändern
+                    </h2>
+                  </div>
+                </div>
+
+                <label
+                  htmlFor="email"
+                  className="mb-2 block text-sm font-medium text-zinc-300"
+                >
                   E-Mail
                 </label>
                 <input
@@ -189,64 +264,96 @@ export default function EditProfilePage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-white/25"
+                  className="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-black"
                   placeholder="deine@email.de"
                 />
               </div>
+            </div>
 
-              <div>
-                <label htmlFor="password" className="mb-2 block text-sm text-white/70">
-                  Neues Passwort
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-white/25"
-                  placeholder="Neues Passwort"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="passwordRepeat" className="mb-2 block text-sm text-white/70">
-                  Passwort wiederholen
-                </label>
-                <input
-                  id="passwordRepeat"
-                  type="password"
-                  value={passwordRepeat}
-                  onChange={(e) => setPasswordRepeat(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-white/25"
-                  placeholder="Passwort erneut eingeben"
-                />
-              </div>
-
-              {error ? (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                  {error}
+            <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="rounded-2xl border border-white/10 bg-zinc-950 p-3">
+                  <KeyRound className="h-5 w-5 text-cyan-300" />
                 </div>
-              ) : null}
-
-              {success ? (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-                  {success}
+                <div>
+                  <div className="text-sm font-medium text-zinc-500">
+                    Sicherheit
+                  </div>
+                  <h2 className="text-lg font-semibold text-white">
+                    Passwort ändern
+                  </h2>
                 </div>
-              ) : null}
-
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex min-w-[180px] items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {saving ? "Speichern..." : "Profil speichern"}
-                </button>
               </div>
-            </form>
-          )}
-        </div>
-      </div>
-    </main>
+
+              <div className="grid gap-5 md:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="password"
+                    className="mb-2 block text-sm font-medium text-zinc-300"
+                  >
+                    Neues Passwort
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-black"
+                    placeholder="Neues Passwort"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="passwordRepeat"
+                    className="mb-2 block text-sm font-medium text-zinc-300"
+                  >
+                    Passwort wiederholen
+                  </label>
+                  <input
+                    id="passwordRepeat"
+                    type="password"
+                    value={passwordRepeat}
+                    onChange={(e) => setPasswordRepeat(e.target.value)}
+                    className="w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-black"
+                    placeholder="Passwort erneut eingeben"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {error ? (
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {error}
+              </div>
+            ) : null}
+
+            {success ? (
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                {success}
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap justify-end gap-3">
+              <Link
+                href="/profile"
+                className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+              >
+                Abbrechen
+              </Link>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="inline-flex min-w-[190px] items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <Save className="h-4 w-4" />
+                {saving ? "Speichert..." : "Profil speichern"}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+    </div>
   );
 }

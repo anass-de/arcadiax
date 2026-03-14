@@ -14,7 +14,7 @@ type RouteContext = {
 
 type SessionUser = {
   id?: string | null;
-  role?: string | null;
+  role?: "ADMIN" | "USER" | null;
   email?: string | null;
   name?: string | null;
 };
@@ -22,7 +22,9 @@ type SessionUser = {
 function getSessionUser(
   session: Awaited<ReturnType<typeof getServerSession>>
 ): SessionUser | null {
-  if (!session) return null;
+  if (!session) {
+    return null;
+  }
 
   const maybeSession = session as { user?: unknown };
 
@@ -33,29 +35,62 @@ function getSessionUser(
   return maybeSession.user as SessionUser;
 }
 
+function canManageComment(
+  currentUser: SessionUser | null,
+  commentUserId: string | null
+) {
+  if (!currentUser?.id) {
+    return false;
+  }
+
+  if (currentUser.role === "ADMIN") {
+    return true;
+  }
+
+  return commentUserId === currentUser.id;
+}
+
 export async function PATCH(req: NextRequest, context: RouteContext) {
   try {
     const session = await getServerSession(authOptions);
     const user = getSessionUser(session);
 
     if (!user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Nicht autorisiert." },
+        { status: 401 }
+      );
     }
 
     const { id } = await context.params;
+    const commentId = id?.trim();
+
+    if (!commentId) {
+      return NextResponse.json(
+        { error: "Ungültige Kommentar-ID." },
+        { status: 400 }
+      );
+    }
 
     const body = await req.json().catch(() => null);
     const content = String(body?.content ?? "").trim();
 
     if (!content) {
       return NextResponse.json(
-        { error: "Kommentarinhalt fehlt." },
+        { error: "Der Kommentar darf nicht leer sein." },
+        { status: 400 }
+      );
+    }
+
+    if (content.length > 2000) {
+      return NextResponse.json(
+        { error: "Der Kommentar ist zu lang. Maximal 2000 Zeichen sind erlaubt." },
         { status: 400 }
       );
     }
 
     const existingComment = await prisma.comment.findUnique({
-      where: { id },
+      where: { id: commentId },
       select: {
         id: true,
         userId: true,
@@ -64,17 +99,20 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
 
     if (!existingComment) {
       return NextResponse.json(
-        { error: "Kommentar nicht gefunden." },
+        { error: "Kommentar wurde nicht gefunden." },
         { status: 404 }
       );
     }
 
-    if (existingComment.userId !== user.id && user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!canManageComment(user, existingComment.userId)) {
+      return NextResponse.json(
+        { error: "Kein Zugriff auf diesen Kommentar." },
+        { status: 403 }
+      );
     }
 
     const updated = await prisma.comment.update({
-      where: { id },
+      where: { id: commentId },
       data: {
         content,
       },
@@ -86,7 +124,8 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     });
 
     return NextResponse.json({
-      message: "Kommentar aktualisiert.",
+      ok: true,
+      message: "Kommentar wurde aktualisiert.",
       comment: updated,
     });
   } catch (error) {
@@ -105,36 +144,70 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     const user = getSessionUser(session);
 
     if (!user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Nicht autorisiert." },
+        { status: 401 }
+      );
     }
 
     const { id } = await context.params;
+    const commentId = id?.trim();
+
+    if (!commentId) {
+      return NextResponse.json(
+        { error: "Ungültige Kommentar-ID." },
+        { status: 400 }
+      );
+    }
 
     const existingComment = await prisma.comment.findUnique({
-      where: { id },
+      where: { id: commentId },
       select: {
         id: true,
         userId: true,
+        parentId: true,
       },
     });
 
     if (!existingComment) {
       return NextResponse.json(
-        { error: "Kommentar nicht gefunden." },
+        { error: "Kommentar wurde nicht gefunden." },
         { status: 404 }
       );
     }
 
-    if (existingComment.userId !== user.id && user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!canManageComment(user, existingComment.userId)) {
+      return NextResponse.json(
+        { error: "Kein Zugriff auf diesen Kommentar." },
+        { status: 403 }
+      );
     }
 
-    await prisma.comment.delete({
-      where: { id },
-    });
+    if (existingComment.parentId === null) {
+      await prisma.$transaction([
+        prisma.comment.deleteMany({
+          where: {
+            parentId: commentId,
+          },
+        }),
+        prisma.comment.delete({
+          where: {
+            id: commentId,
+          },
+        }),
+      ]);
+    } else {
+      await prisma.comment.delete({
+        where: {
+          id: commentId,
+        },
+      });
+    }
 
     return NextResponse.json({
-      message: "Kommentar gelöscht.",
+      ok: true,
+      message: "Kommentar wurde gelöscht.",
+      deletedId: commentId,
     });
   } catch (error) {
     console.error("DELETE /api/comments/[id] error:", error);

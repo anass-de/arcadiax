@@ -1,58 +1,9 @@
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 
 import { prisma } from "@/lib/prisma";
-
-/*
-  Username aus Email generieren
-*/
-function buildUsernameFromEmail(email: string) {
-  const localPart = email.split("@")[0] || "user";
-
-  return (
-    localPart
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 20) || "user"
-  );
-}
-
-/*
-  garantiert eindeutigen Username
-*/
-async function getUniqueUsername(base: string) {
-  const safeBase = base.slice(0, 20) || "user";
-
-  const existing = await prisma.user.findUnique({
-    where: { username: safeBase },
-    select: { id: true },
-  });
-
-  if (!existing) {
-    return safeBase;
-  }
-
-  for (let i = 1; i <= 9999; i++) {
-    const candidate = `${safeBase}-${i}`.slice(0, 20);
-
-    const found = await prisma.user.findUnique({
-      where: { username: candidate },
-      select: { id: true },
-    });
-
-    if (!found) {
-      return candidate;
-    }
-  }
-
-  return `${safeBase}-${Date.now()}`.slice(0, 20);
-}
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -68,39 +19,29 @@ export const authOptions: NextAuthOptions = {
   debug: false,
 
   providers: [
-    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-      ? [
-          GoogleProvider({
-            clientId: process.env.GOOGLE_CLIENT_ID,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-          }),
-        ]
-      : []),
-
     CredentialsProvider({
       name: "Credentials",
 
       credentials: {
         identifier: {
-          label: "Username oder Email",
+          label: "Username oder E-Mail",
           type: "text",
         },
         password: {
-          label: "Password",
+          label: "Passwort",
           type: "password",
         },
       },
 
       async authorize(credentials) {
-        const identifier = String(credentials?.identifier ?? "")
-          .trim()
-          .toLowerCase();
-
+        const rawIdentifier = String(credentials?.identifier ?? "").trim();
         const password = String(credentials?.password ?? "");
 
-        if (!identifier || !password) {
+        if (!rawIdentifier || !password) {
           return null;
         }
+
+        const identifier = rawIdentifier.toLowerCase();
 
         const user = await prisma.user.findFirst({
           where: {
@@ -133,69 +74,20 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           image: user.image,
           role: user.role ?? "USER",
+          username: user.username ?? undefined,
         } as any;
       },
     }),
   ],
 
   callbacks: {
-    async signIn({ user, account }) {
-      if (account?.provider === "google" && user.email) {
-        const email = user.email.trim().toLowerCase();
-        const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-
-        const dbUser = await prisma.user.findUnique({
-          where: { email },
-          select: {
-            id: true,
-            role: true,
-            username: true,
-          },
-        });
-
-        if (dbUser) {
-          const desiredRole =
-            adminEmail && email === adminEmail ? "ADMIN" : dbUser.role ?? "USER";
-
-          const updateData: {
-            role?: "ADMIN" | "USER";
-            username?: string;
-          } = {};
-
-          if (dbUser.role !== desiredRole) {
-            updateData.role = desiredRole;
-          }
-
-          if (!dbUser.username) {
-            const base = buildUsernameFromEmail(email);
-            updateData.username = await getUniqueUsername(base);
-          }
-
-          if (Object.keys(updateData).length > 0) {
-            await prisma.user.update({
-              where: { id: dbUser.id },
-              data: updateData,
-            });
-          }
-
-          (user as any).id = dbUser.id;
-          (user as any).role = desiredRole;
-        }
-      }
-
-      return true;
-    },
-
     async jwt({ token, user }) {
       if (user) {
         token.sub = (user as any).id ?? token.sub;
         (token as any).role = (user as any).role ?? "USER";
+        (token as any).username = (user as any).username ?? null;
       }
 
-      /*
-        Rolle IMMER aus DB nachladen,
-        damit Änderungen von USER -> ADMIN sofort greifen
-      */
       if (token.email) {
         const dbUser = await prisma.user.findUnique({
           where: { email: token.email.toLowerCase() },
@@ -212,9 +104,11 @@ export const authOptions: NextAuthOptions = {
         if (dbUser) {
           token.sub = dbUser.id;
           (token as any).role = dbUser.role ?? "USER";
+          (token as any).username = dbUser.username ?? null;
           token.name = dbUser.name ?? dbUser.username ?? token.name;
           token.email = dbUser.email ?? token.email;
-          (token as any).picture = dbUser.image ?? (token as any).picture;
+          (token as any).picture =
+            dbUser.image ?? (token as any).picture ?? null;
         }
       }
 
@@ -225,9 +119,11 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as any).id = token.sub ?? "";
         (session.user as any).role = (token as any).role ?? "USER";
+        (session.user as any).username = (token as any).username ?? null;
         session.user.name = token.name ?? session.user.name;
         session.user.email = token.email ?? session.user.email;
-        session.user.image = ((token as any).picture as string | null) ?? session.user.image;
+        session.user.image =
+          ((token as any).picture as string | null) ?? session.user.image;
       }
 
       return session;

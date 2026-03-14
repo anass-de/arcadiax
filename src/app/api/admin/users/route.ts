@@ -1,27 +1,54 @@
-// src/app/api/admin/users/route.ts
-
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+export const runtime = "nodejs";
+
+type SessionUser = {
+  id?: string | null;
+  role?: "ADMIN" | "USER" | null;
+  email?: string | null;
+  name?: string | null;
+};
+
+function getSessionUser(
+  session: Awaited<ReturnType<typeof getServerSession>>
+): SessionUser | null {
+  if (!session) {
+    return null;
+  }
+
+  const maybeSession = session as { user?: unknown };
+
+  if (!maybeSession.user || typeof maybeSession.user !== "object") {
+    return null;
+  }
+
+  return maybeSession.user as SessionUser;
+}
+
 /*
   GET /api/admin/users
 
-  Diese Route ist optional hilfreich für spätere AJAX-Tabellen.
-  Aktuell bauen wir die Dashboard-Seite serverseitig direkt mit Prisma,
-  aber die Route ist schon vorbereitet.
+  Optional für spätere AJAX-Tabellen oder Client-Fetching.
+  Aktuell wird die Dashboard-Seite serverseitig mit Prisma gerendert,
+  aber diese Route ist vollständig vorbereitet.
 */
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
+    const user = getSessionUser(session);
 
-    if (!session?.user) {
-      return NextResponse.json({ error: "Nicht eingeloggt." }, { status: 401 });
+    if (!user?.id) {
+      return NextResponse.json(
+        { error: "Nicht eingeloggt." },
+        { status: 401 }
+      );
     }
 
-    if (session.user.role !== "ADMIN") {
+    if (user.role !== "ADMIN") {
       return NextResponse.json(
         { error: "Kein Zugriff. Nur Admins erlaubt." },
         { status: 403 }
@@ -39,15 +66,25 @@ export async function GET() {
         email: true,
         role: true,
         createdAt: true,
+        _count: {
+          select: {
+            comments: true,
+            releases: true,
+            mediaItems: true,
+          },
+        },
       },
     });
 
-    return NextResponse.json({ users });
+    return NextResponse.json({
+      ok: true,
+      users,
+    });
   } catch (error) {
-    console.error("Fehler beim Laden der Nutzer:", error);
+    console.error("GET /api/admin/users error:", error);
 
     return NextResponse.json(
-      { error: "Interner Serverfehler." },
+      { error: "Benutzer konnten nicht geladen werden." },
       { status: 500 }
     );
   }

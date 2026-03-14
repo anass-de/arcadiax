@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 
 import { authOptions } from "@/lib/auth";
@@ -28,7 +29,7 @@ const VIDEO_MIME_TYPES = new Set([
 
 type SessionUser = {
   id?: string | null;
-  role?: string | null;
+  role?: "USER" | "ADMIN" | null;
   email?: string | null;
   name?: string | null;
 };
@@ -58,7 +59,7 @@ async function requireAdmin() {
   if (!user?.id || user.role !== "ADMIN") {
     return {
       ok: false as const,
-      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      response: NextResponse.json({ error: "Nicht autorisiert." }, { status: 401 }),
     };
   }
 
@@ -116,7 +117,7 @@ function getSupabaseAdmin() {
 
   if (!url || !serviceRoleKey) {
     throw new Error(
-      "Supabase is not configured correctly. NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing."
+      "Supabase ist nicht korrekt konfiguriert. NEXT_PUBLIC_SUPABASE_URL oder SUPABASE_SERVICE_ROLE_KEY fehlt."
     );
   }
 
@@ -174,7 +175,27 @@ async function removeFileFromStorageByPublicUrl(
 
   if (error) {
     console.error(
-      "Failed to remove file from Supabase Storage:",
+      "Konnte Datei nicht aus Supabase Storage löschen:",
+      error.message
+    );
+  }
+}
+
+async function removeFilesFromStorage(filePaths: string[]) {
+  const uniquePaths = [...new Set(filePaths.filter(Boolean))];
+
+  if (uniquePaths.length === 0) {
+    return;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const bucket = getStorageBucket();
+
+  const { error } = await supabase.storage.from(bucket).remove(uniquePaths);
+
+  if (error) {
+    console.error(
+      "Rollback in Supabase Storage fehlgeschlagen:",
       error.message
     );
   }
@@ -198,7 +219,7 @@ async function uploadFileToStorage(args: {
   });
 
   if (error) {
-    throw new Error(`Upload failed: ${error.message}`);
+    throw new Error(`Upload fehlgeschlagen: ${error.message}`);
   }
 
   const {
@@ -209,6 +230,38 @@ async function uploadFileToStorage(args: {
     filePath,
     publicUrl,
   };
+}
+
+function validateFileForType(file: File, selectedType: MediaType) {
+  if (!(file instanceof File) || file.size <= 0) {
+    throw new Error("Eine Datei ist erforderlich.");
+  }
+
+  const mimeType = file.type?.trim();
+
+  if (!mimeType) {
+    throw new Error("Ungültiger MIME-Typ.");
+  }
+
+  if (selectedType === "IMAGE" && !IMAGE_MIME_TYPES.has(mimeType)) {
+    throw new Error(
+      "Für Bilder sind nur JPG, PNG, WEBP, GIF, AVIF und SVG erlaubt."
+    );
+  }
+
+  if (selectedType === "VIDEO" && !VIDEO_MIME_TYPES.has(mimeType)) {
+    throw new Error("Für Videos sind nur MP4, WEBM, OGG und MOV erlaubt.");
+  }
+
+  const maxSize = getMaxSizeForType(selectedType);
+
+  if (file.size > maxSize) {
+    throw new Error(
+      selectedType === "IMAGE"
+        ? "Das Bild ist zu groß. Maximal erlaubt sind 10 MB."
+        : "Das Video ist zu groß. Maximal erlaubt sind 200 MB."
+    );
+  }
 }
 
 export async function GET() {
@@ -238,7 +291,7 @@ export async function GET() {
     console.error("GET /api/admin/media error:", error);
 
     return NextResponse.json(
-      { error: "Failed to load media." },
+      { error: "Medien konnten nicht geladen werden." },
       { status: 500 }
     );
   }
@@ -263,7 +316,7 @@ export async function POST(request: NextRequest) {
 
     if (!isMediaType(typeRaw)) {
       return NextResponse.json(
-        { error: "Please choose a valid media type." },
+        { error: "Bitte wähle einen gültigen Medientyp aus." },
         { status: 400 }
       );
     }
@@ -276,45 +329,22 @@ export async function POST(request: NextRequest) {
 
     const fileEntry = formData.get("file");
 
-    if (!(fileEntry instanceof File) || fileEntry.size <= 0) {
+    if (!(fileEntry instanceof File)) {
       return NextResponse.json(
-        { error: "A file is required." },
+        { error: "Eine Datei ist erforderlich." },
         { status: 400 }
       );
     }
 
-    const mimeType = fileEntry.type?.trim();
-
-    if (!mimeType) {
-      return NextResponse.json(
-        { error: "Invalid MIME type." },
-        { status: 400 }
-      );
-    }
-
-    if (selectedType === "IMAGE" && !IMAGE_MIME_TYPES.has(mimeType)) {
-      return NextResponse.json(
-        { error: "Only image files are allowed for photo uploads." },
-        { status: 400 }
-      );
-    }
-
-    if (selectedType === "VIDEO" && !VIDEO_MIME_TYPES.has(mimeType)) {
-      return NextResponse.json(
-        { error: "Only video files are allowed for video uploads." },
-        { status: 400 }
-      );
-    }
-
-    const maxSize = getMaxSizeForType(selectedType);
-
-    if (fileEntry.size > maxSize) {
+    try {
+      validateFileForType(fileEntry, selectedType);
+    } catch (error) {
       return NextResponse.json(
         {
           error:
-            selectedType === "IMAGE"
-              ? "Image is too large. Maximum allowed size is 10 MB."
-              : "Video is too large. Maximum allowed size is 200 MB.",
+            error instanceof Error
+              ? error.message
+              : "Die Datei ist ungültig.",
         },
         { status: 400 }
       );
@@ -352,6 +382,10 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    revalidatePath("/");
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/media");
+
     return NextResponse.json(
       {
         ok: true,
@@ -360,26 +394,17 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    if (uploadedPaths.length > 0) {
-      const supabase = getSupabaseAdmin();
-      const bucket = getStorageBucket();
-
-      const { error: removeError } = await supabase.storage
-        .from(bucket)
-        .remove(uploadedPaths);
-
-      if (removeError) {
-        console.error(
-          "Supabase Storage rollback failed:",
-          removeError.message
-        );
-      }
-    }
+    await removeFilesFromStorage(uploadedPaths);
 
     console.error("POST /api/admin/media error:", error);
 
     return NextResponse.json(
-      { error: "Failed to create media." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Medium konnte nicht erstellt werden.",
+      },
       { status: 500 }
     );
   }
@@ -398,7 +423,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json(
-        { error: "Media ID is missing." },
+        { error: "Media-ID fehlt." },
         { status: 400 }
       );
     }
@@ -409,7 +434,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!existing) {
       return NextResponse.json(
-        { error: "Media item not found." },
+        { error: "Medium wurde nicht gefunden." },
         { status: 404 }
       );
     }
@@ -420,6 +445,10 @@ export async function DELETE(request: NextRequest) {
 
     await removeFileFromStorageByPublicUrl(existing.url);
 
+    revalidatePath("/");
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/media");
+
     return NextResponse.json({
       ok: true,
       deletedId: id,
@@ -428,7 +457,7 @@ export async function DELETE(request: NextRequest) {
     console.error("DELETE /api/admin/media error:", error);
 
     return NextResponse.json(
-      { error: "Failed to delete media." },
+      { error: "Medium konnte nicht gelöscht werden." },
       { status: 500 }
     );
   }

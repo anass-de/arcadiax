@@ -1,12 +1,10 @@
-
-// prisma/schema.prisma → model Comment
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-
+  // url      = env("DATABASE_URL")
 }
 
 enum Role {
@@ -25,25 +23,25 @@ enum ReleaseStatus {
 }
 
 model User {
-  id             String        @id @default(cuid())
-  name           String?
-  username       String?       @unique
-  email          String?       @unique
-  emailVerified  DateTime?
-  passwordHash   String?
-  image          String?
-  bio            String?
-  role           Role          @default(USER)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id            String    @id @default(cuid())
+  name          String?
+  username      String    @unique
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  image         String?
+  bio           String?
+  role          Role      @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  accounts       Account[]
-  sessions       Session[]
-  comments       Comment[]
-  releases       Release[]     @relation("ReleaseAuthor")
-  mediaItems     HomeMedia[]   @relation("MediaAuthor")
-  releaseLikes   ReleaseLike[]
-  downloads      Download[]
+  accounts     Account[]
+  sessions     Session[]
+  comments     Comment[]
+  releases     Release[]     @relation("ReleaseAuthor")
+  mediaItems   HomeMedia[]   @relation("MediaAuthor")
+  releaseLikes ReleaseLike[]
+  downloads    Download[]
 
   @@index([email])
   @@index([username])
@@ -112,12 +110,12 @@ model Release {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  authorId      String
-  author        User          @relation("ReleaseAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User   @relation("ReleaseAuthor", fields: [authorId], references: [id], onDelete: Cascade)
 
-  comments      Comment[]
-  likes         ReleaseLike[]
-  downloads     Download[]
+  comments  Comment[]
+  likes     ReleaseLike[]
+  downloads Download[]
 
   @@index([authorId])
   @@index([status])
@@ -127,20 +125,20 @@ model Release {
 }
 
 model Comment {
-  id        String    @id @default(cuid())
+  id        String   @id @default(cuid())
   content   String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   releaseId String
-  release   Release   @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  release   Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
 
-  parentId  String?
-  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies   Comment[] @relation("CommentReplies")
+  parentId String?
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  Comment[] @relation("CommentReplies")
 
   @@index([userId])
   @@index([releaseId])
@@ -156,8 +154,8 @@ model ReleaseLike {
   userId    String
   releaseId String
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  release   Release  @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
 
   @@unique([userId, releaseId])
   @@index([userId])
@@ -190,12 +188,12 @@ model Download {
   createdAt DateTime @default(now())
 
   releaseId String
-  release   Release  @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  release   Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
 
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  ip        String?
+  ip String?
 
   @@index([releaseId])
   @@index([userId])
