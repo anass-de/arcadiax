@@ -52,10 +52,10 @@ function getSafeDescription(text?: string | null) {
 }
 
 async function getRelease(slug: string) {
-  const bySlug = await prisma.release.findFirst({
+  return prisma.release.findFirst({
     where: {
-      slug,
       status: "PUBLISHED",
+      OR: [{ slug }, { id: slug }],
     },
     select: {
       id: true,
@@ -76,37 +76,6 @@ async function getRelease(slug: string) {
       },
     },
   });
-
-  if (bySlug) {
-    return bySlug;
-  }
-
-  const byId = await prisma.release.findFirst({
-    where: {
-      id: slug,
-      status: "PUBLISHED",
-    },
-    select: {
-      id: true,
-      title: true,
-      slug: true,
-      version: true,
-      description: true,
-      imageUrl: true,
-      fileUrl: true,
-      downloadCount: true,
-      status: true,
-      createdAt: true,
-      updatedAt: true,
-      _count: {
-        select: {
-          comments: true,
-        },
-      },
-    },
-  });
-
-  return byId;
 }
 
 function getDownloadHref(release: {
