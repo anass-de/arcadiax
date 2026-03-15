@@ -1,0 +1,520 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  MessageSquare,
+  Pencil,
+  Save,
+  Send,
+  Trash2,
+  User,
+  X,
+} from "lucide-react";
+
+type CommunityUser = {
+  id: string;
+  name: string | null;
+  username: string | null;
+  image: string | null;
+  role: string | null;
+};
+
+type CommunityPost = {
+  id: string;
+  content: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  user: CommunityUser;
+};
+
+type CurrentUser = {
+  id?: string | null;
+  name?: string | null;
+  username?: string | null;
+  image?: string | null;
+  role?: string | null;
+} | null;
+
+type CommunityFeedProps = {
+  posts: CommunityPost[];
+  currentUser: CurrentUser;
+};
+
+function formatDateTime(value: string | Date) {
+  const date = new Date(value);
+
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function getDisplayName(user: {
+  name?: string | null;
+  username?: string | null;
+}) {
+  return user.name?.trim() || user.username?.trim() || "User";
+}
+
+function getInitials(user: {
+  name?: string | null;
+  username?: string | null;
+}) {
+  const source = getDisplayName(user);
+  const parts = source.split(/\s+/).filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return source.slice(0, 2).toUpperCase();
+}
+
+export default function CommunityFeed({
+  posts: initialPosts,
+  currentUser,
+}: CommunityFeedProps) {
+  const [posts, setPosts] = useState<CommunityPost[]>(initialPosts);
+  const [content, setContent] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  const isLoggedIn = Boolean(currentUser?.id);
+  const isAdmin = currentUser?.role === "ADMIN";
+
+  const sortedPosts = useMemo(() => {
+    return [...posts].sort((a, b) => {
+      return (
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+  }, [posts]);
+
+  function showError(message: string) {
+    setFeedback({ type: "error", text: message });
+  }
+
+  function showSuccess(message: string) {
+    setFeedback({ type: "success", text: message });
+  }
+
+  async function handleCreatePost() {
+    const trimmed = content.trim();
+
+    if (!trimmed) {
+      showError("Bitte schreibe zuerst eine Nachricht.");
+      return;
+    }
+
+    if (!isLoggedIn) {
+      showError("Du musst eingeloggt sein, um eine Nachricht zu schreiben.");
+      return;
+    }
+
+    setIsCreating(true);
+    setFeedback(null);
+
+    try {
+      const response = await fetch("/api/community", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content: trimmed,
+        }),
+      });
+
+      const data = (await response.json().catch(() => null)) as
+        | { post?: CommunityPost; error?: string }
+        | null;
+
+      if (!response.ok || !data?.post) {
+        throw new Error(data?.error || "Nachricht konnte nicht erstellt werden.");
+      }
+
+      setPosts((prev) => [data.post as CommunityPost, ...prev]);
+      setContent("");
+      showSuccess("Nachricht erfolgreich erstellt.");
+    } catch (error) {
+      showError(
+        error instanceof Error
+          ? error.message
+          : "Beim Erstellen der Nachricht ist ein Fehler aufgetreten."
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  function startEditing(post: CommunityPost) {
+    setEditingId(post.id);
+    setEditingContent(post.content);
+    setFeedback(null);
+  }
+
+  function cancelEditing() {
+    setEditingId(null);
+    setEditingContent("");
+  }
+
+  async function handleSaveEdit(postId: string) {
+    const trimmed = editingContent.trim();
+
+    if (!trimmed) {
+      showError("Die Nachricht darf nicht leer sein.");
+      return;
+    }
+
+    setBusyId(postId);
+    setFeedback(null);
+
+    try {
+      const response = await fetch(`/api/community/${postId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content: trimmed,
+        }),
+      });
+
+      const data = (await response.json().catch(() => null)) as
+        | { post?: CommunityPost; error?: string }
+        | null;
+
+      if (!response.ok || !data?.post) {
+        throw new Error(
+          data?.error || "Nachricht konnte nicht aktualisiert werden."
+        );
+      }
+
+      setPosts((prev) =>
+        prev.map((post) => (post.id === postId ? (data.post as CommunityPost) : post))
+      );
+      setEditingId(null);
+      setEditingContent("");
+      showSuccess("Nachricht erfolgreich bearbeitet.");
+    } catch (error) {
+      showError(
+        error instanceof Error
+          ? error.message
+          : "Beim Bearbeiten der Nachricht ist ein Fehler aufgetreten."
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleDelete(post: CommunityPost) {
+    const isOwner = currentUser?.id === post.user.id;
+    const allowed = isOwner || isAdmin;
+
+    if (!allowed) {
+      showError("Du darfst diese Nachricht nicht löschen.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Möchtest du diese Nachricht wirklich löschen?"
+    );
+
+    if (!confirmed) return;
+
+    setBusyId(post.id);
+    setFeedback(null);
+
+    try {
+      const response = await fetch(`/api/community/${post.id}`, {
+        method: "DELETE",
+      });
+
+      const data = (await response.json().catch(() => null)) as
+        | { success?: boolean; error?: string }
+        | null;
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || "Nachricht konnte nicht gelöscht werden.");
+      }
+
+      setPosts((prev) => prev.filter((item) => item.id !== post.id));
+      if (editingId === post.id) {
+        cancelEditing();
+      }
+      showSuccess("Nachricht erfolgreich gelöscht.");
+    } catch (error) {
+      showError(
+        error instanceof Error
+          ? error.message
+          : "Beim Löschen der Nachricht ist ein Fehler aufgetreten."
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5 shadow-2xl shadow-black/20 backdrop-blur sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-white sm:text-2xl">
+              Community Feed
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              Teile Gedanken, Ideen und Feedback mit der ArcadiaX Community.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-white/70">
+            {posts.length} {posts.length === 1 ? "Nachricht" : "Nachrichten"}
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-[24px] border border-white/10 bg-black/20 p-4 sm:p-5">
+          {isLoggedIn ? (
+            <>
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#6c5ce7]/30 bg-[#6c5ce7]/15 text-sm font-semibold text-[#b8adff]">
+                  {getInitials({
+                    name: currentUser?.name,
+                    username: currentUser?.username,
+                  })}
+                </div>
+
+                <div>
+                  <p className="font-medium text-white">
+                    {getDisplayName({
+                      name: currentUser?.name,
+                      username: currentUser?.username,
+                    })}
+                  </p>
+                  <p className="text-sm text-white/50">
+                    @{currentUser?.username || "user"}
+                  </p>
+                </div>
+              </div>
+
+              <textarea
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                rows={5}
+                maxLength={1000}
+                placeholder="Schreibe eine Nachricht an die ArcadiaX Community..."
+                className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
+              />
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-white/45">
+                  {content.trim().length}/1000 Zeichen
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleCreatePost}
+                  disabled={isCreating || !content.trim()}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#6c5ce7] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Send className="h-4 w-4" />
+                  {isCreating ? "Wird gesendet..." : "Nachricht senden"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-5">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-xl border border-white/10 bg-black/20 p-2 text-white/70">
+                  <User className="h-4 w-4" />
+                </div>
+
+                <div>
+                  <h3 className="font-medium text-white">
+                    Login erforderlich
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-white/60">
+                    Du kannst alle Nachrichten lesen. Um selbst eine Nachricht zu
+                    schreiben, musst du eingeloggt sein.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {feedback ? (
+            <div
+              className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${
+                feedback.type === "success"
+                  ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
+                  : "border-red-500/20 bg-red-500/10 text-red-200"
+              }`}
+            >
+              {feedback.text}
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        {sortedPosts.length === 0 ? (
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-10 text-center shadow-xl shadow-black/10">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#6c5ce7]/30 bg-[#6c5ce7]/10 text-[#a99cff]">
+              <MessageSquare className="h-6 w-6" />
+            </div>
+
+            <h3 className="mt-4 text-xl font-semibold text-white">
+              Noch keine Nachrichten
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              Sei der Erste und starte die Unterhaltung in der ArcadiaX Community.
+            </p>
+          </div>
+        ) : (
+          sortedPosts.map((post) => {
+            const isOwner = currentUser?.id === post.user.id;
+            const canEdit = isOwner;
+            const canDelete = isOwner || isAdmin;
+            const isEditing = editingId === post.id;
+            const isBusy = busyId === post.id;
+
+            return (
+              <article
+                key={post.id}
+                className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5 shadow-xl shadow-black/10 backdrop-blur sm:p-6"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/30 text-sm font-semibold text-white">
+                      {post.user.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={post.user.image}
+                          alt={getDisplayName(post.user)}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        getInitials(post.user)
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate font-semibold text-white">
+                          {getDisplayName(post.user)}
+                        </h3>
+
+                        {post.user.role === "ADMIN" ? (
+                          <span className="rounded-full border border-[#6c5ce7]/30 bg-[#6c5ce7]/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#a99cff]">
+                            Admin
+                          </span>
+                        ) : null}
+
+                        {isOwner ? (
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55">
+                            You
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <p className="mt-1 text-sm text-white/45">
+                        @{post.user.username || "user"} ·{" "}
+                        {formatDateTime(post.createdAt)}
+                        {new Date(post.updatedAt).getTime() >
+                        new Date(post.createdAt).getTime()
+                          ? " · bearbeitet"
+                          : ""}
+                      </p>
+                    </div>
+                  </div>
+
+                  {(canEdit || canDelete) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {canEdit && !isEditing ? (
+                        <button
+                          type="button"
+                          onClick={() => startEditing(post)}
+                          disabled={isBusy}
+                          className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-3.5 py-2 text-sm text-white/75 transition hover:border-[#6c5ce7]/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Bearbeiten
+                        </button>
+                      ) : null}
+
+                      {canDelete ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(post)}
+                          disabled={isBusy}
+                          className="inline-flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-3.5 py-2 text-sm text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Löschen
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4">
+                  {isEditing ? (
+                    <div className="space-y-3">
+                      <textarea
+                        value={editingContent}
+                        onChange={(event) => setEditingContent(event.target.value)}
+                        rows={5}
+                        maxLength={1000}
+                        className="w-full resize-none rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50"
+                      />
+
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm text-white/45">
+                          {editingContent.trim().length}/1000 Zeichen
+                        </p>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEdit(post.id)}
+                            disabled={isBusy || !editingContent.trim()}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Save className="h-4 w-4" />
+                            {isBusy ? "Speichert..." : "Speichern"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={cancelEditing}
+                            disabled={isBusy}
+                            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white/75 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <X className="h-4 w-4" />
+                            Abbrechen
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="whitespace-pre-wrap text-sm leading-7 text-white/85 sm:text-[15px]">
+                      {post.content}
+                    </p>
+                  )}
+                </div>
+              </article>
+            );
+          })
+        )}
+      </section>
+    </div>
+  );
+}

@@ -1,44 +1,9 @@
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 
 import { prisma } from "@/lib/prisma";
-
-function buildUsernameFromEmail(email: string) {
-  const localPart = email.split("@")[0] || "user";
-
-  return (
-    localPart
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 20) || "user"
-  );
-}
-
-async function generateUniqueUsername(email: string) {
-  const base = buildUsernameFromEmail(email);
-  let candidate = base;
-  let counter = 1;
-
-  while (true) {
-    const existing = await prisma.user.findUnique({
-      where: { username: candidate },
-      select: { id: true },
-    });
-
-    if (!existing) {
-      return candidate;
-    }
-
-    candidate = `${base}-${counter}`;
-    counter += 1;
-  }
-}
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -53,11 +18,6 @@ export const authOptions: NextAuthOptions = {
   },
 
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
-    }),
-
     CredentialsProvider({
       name: "Credentials",
       credentials: {
@@ -82,6 +42,15 @@ export const authOptions: NextAuthOptions = {
         const user = await prisma.user.findFirst({
           where: {
             OR: [{ email: identifier }, { username: identifier }],
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+            passwordHash: true,
+            role: true,
+            username: true,
           },
         });
 
@@ -108,29 +77,6 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-    async signIn({ user, account }) {
-      if (account?.provider === "google" && user.email) {
-        const existingUser = await prisma.user.findUnique({
-          where: { email: user.email },
-          select: {
-            id: true,
-            username: true,
-          },
-        });
-
-        if (existingUser && !existingUser.username) {
-          const username = await generateUniqueUsername(user.email);
-
-          await prisma.user.update({
-            where: { id: existingUser.id },
-            data: { username },
-          });
-        }
-      }
-
-      return true;
-    },
-
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;

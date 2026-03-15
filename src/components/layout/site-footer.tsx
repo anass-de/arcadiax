@@ -36,8 +36,8 @@ export default function SiteFooter({ user }: SiteFooterProps) {
             </div>
 
             <p className="max-w-md text-sm leading-6 text-white/60">
-              Verwalte Releases, Medien und Community-Inhalte in einer
-              modernen Plattform mit dunklem, klar strukturiertem Interface.
+              Verwalte Releases, Medien und Community-Inhalte in einer modernen
+              Plattform mit dunklem, klar strukturiertem Interface.
             </p>
           </div>
 
@@ -52,6 +52,13 @@ export default function SiteFooter({ user }: SiteFooterProps) {
                 className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
               >
                 Releases
+              </Link>
+
+              <Link
+                href="/community"
+                className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+              >
+                Community
               </Link>
 
               {isLoggedIn && !isAdmin && (
@@ -147,15 +154,10 @@ export default function SiteFooter({ user }: SiteFooterProps) {
         </div>
 
         <div className="mt-4 flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.02] px-5 py-4 text-sm text-white/45 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            © {year} ArcadiaX. Alle Rechte vorbehalten.
-          </div>
+          <div>© {year} ArcadiaX. Alle Rechte vorbehalten.</div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href="/"
-              className="transition hover:text-white/80"
-            >
+            <Link href="/" className="transition hover:text-white/80">
               Startseite
             </Link>
             <Link
@@ -163,6 +165,12 @@ export default function SiteFooter({ user }: SiteFooterProps) {
               className="transition hover:text-white/80"
             >
               Releases
+            </Link>
+            <Link
+              href="/community"
+              className="transition hover:text-white/80"
+            >
+              Community
             </Link>
             <span className="text-white/20">•</span>
             <span className="text-white/35">

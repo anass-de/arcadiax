@@ -35,13 +35,14 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts     Account[]
-  sessions     Session[]
-  comments     Comment[]
-  releases     Release[]     @relation("ReleaseAuthor")
-  mediaItems   HomeMedia[]   @relation("MediaAuthor")
-  releaseLikes ReleaseLike[]
-  downloads    Download[]
+  accounts       Account[]
+  sessions       Session[]
+  comments       Comment[]
+  releases       Release[]       @relation("ReleaseAuthor")
+  mediaItems     HomeMedia[]     @relation("MediaAuthor")
+  releaseLikes   ReleaseLike[]
+  downloads      Download[]
+  communityPosts CommunityPost[]
 
   @@index([email])
   @@index([username])
@@ -145,6 +146,20 @@ model Comment {
   @@index([parentId])
   @@index([createdAt])
   @@map("comments")
+}
+
+model CommunityPost {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("community_posts")
 }
 
 model ReleaseLike {

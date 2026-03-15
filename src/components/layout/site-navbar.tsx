@@ -65,6 +65,7 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
     { href: "/releases", label: "Releases", icon: Package },
     { href: "/videos", label: "Videos", icon: Film },
     { href: "/photos", label: "Photos", icon: ImageIcon },
+    { href: "/community", label: "Community", icon: MessageSquare },
   ];
 
   const userLinks = [
@@ -72,6 +73,7 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
     { href: "/releases", label: "Releases", icon: Package },
     { href: "/videos", label: "Videos", icon: Film },
     { href: "/photos", label: "Photos", icon: ImageIcon },
+    { href: "/community", label: "Community", icon: MessageSquare },
     { href: "/profile", label: "Profile", icon: User },
   ];
 
@@ -80,6 +82,7 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
     { href: "/releases", label: "Releases", icon: Package },
     { href: "/videos", label: "Videos", icon: Film },
     { href: "/photos", label: "Photos", icon: ImageIcon },
+    { href: "/community", label: "Community", icon: MessageSquare },
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/dashboard/media", label: "Media", icon: ImageIcon },
     { href: "/dashboard/comments", label: "Comments", icon: MessageSquare },
