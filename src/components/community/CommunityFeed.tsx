@@ -53,6 +53,38 @@ type CommunityFeedProps = {
   currentUser: CurrentUser;
 };
 
+type CreatePostResponse =
+  | {
+      post?: Omit<CommunityPost, "replies"> & {
+        replies?: CommunityReply[];
+      };
+      error?: string;
+    }
+  | null;
+
+type CreateReplyResponse =
+  | {
+      post?: CommunityReply;
+      error?: string;
+    }
+  | null;
+
+type UpdateMessageResponse =
+  | {
+      post?: (Omit<CommunityPost, "replies"> & {
+        replies?: CommunityReply[];
+      }) | CommunityReply;
+      error?: string;
+    }
+  | null;
+
+type DeleteMessageResponse =
+  | {
+      success?: boolean;
+      error?: string;
+    }
+  | null;
+
 function formatDateTime(value: string | Date) {
   const date = new Date(value);
 
@@ -176,21 +208,22 @@ export default function CommunityFeed({
         }),
       });
 
-      const data = (await response.json().catch(() => null)) as
-        | { post?: CommunityPost; error?: string }
-        | null;
+      const data = (await response.json().catch(() => null)) as CreatePostResponse;
 
       if (!response.ok || !data?.post) {
         throw new Error(data?.error || "Nachricht konnte nicht erstellt werden.");
       }
 
+      const createdPost = data.post;
+
       setPosts((prev) => [
         {
-          ...(data.post as CommunityPost),
-          replies: Array.isArray(data.post.replies) ? data.post.replies : [],
+          ...createdPost,
+          replies: Array.isArray(createdPost.replies) ? createdPost.replies : [],
         },
         ...prev,
       ]);
+
       setContent("");
       showSuccess("Nachricht erfolgreich erstellt.");
     } catch (error) {
@@ -232,20 +265,20 @@ export default function CommunityFeed({
         }),
       });
 
-      const data = (await response.json().catch(() => null)) as
-        | { post?: CommunityReply; error?: string }
-        | null;
+      const data = (await response.json().catch(() => null)) as CreateReplyResponse;
 
       if (!response.ok || !data?.post) {
         throw new Error(data?.error || "Antwort konnte nicht erstellt werden.");
       }
+
+      const createdReply = data.post;
 
       setPosts((prev) =>
         prev.map((post) =>
           post.id === parentPostId
             ? {
                 ...post,
-                replies: [...post.replies, data.post as CommunityReply].sort(
+                replies: [...post.replies, createdReply].sort(
                   (a, b) =>
                     new Date(a.createdAt).getTime() -
                     new Date(b.createdAt).getTime()
@@ -298,9 +331,7 @@ export default function CommunityFeed({
         }),
       });
 
-      const data = (await response.json().catch(() => null)) as
-        | { post?: CommunityPost | CommunityReply; error?: string }
-        | null;
+      const data = (await response.json().catch(() => null)) as UpdateMessageResponse;
 
       if (!response.ok || !data?.post) {
         throw new Error(
@@ -308,11 +339,19 @@ export default function CommunityFeed({
         );
       }
 
+      const updatedItem = data.post;
+
       setPosts((prev) =>
         prev.map((post) => {
           if (post.id === itemId) {
             return {
-              ...(data.post as CommunityPost),
+              ...post,
+              id: updatedItem.id,
+              content: updatedItem.content,
+              createdAt: updatedItem.createdAt,
+              updatedAt: updatedItem.updatedAt,
+              parentId: updatedItem.parentId,
+              user: updatedItem.user,
               replies: post.replies,
             };
           }
@@ -320,7 +359,17 @@ export default function CommunityFeed({
           return {
             ...post,
             replies: post.replies.map((reply) =>
-              reply.id === itemId ? (data.post as CommunityReply) : reply
+              reply.id === itemId
+                ? {
+                    ...reply,
+                    id: updatedItem.id,
+                    content: updatedItem.content,
+                    createdAt: updatedItem.createdAt,
+                    updatedAt: updatedItem.updatedAt,
+                    parentId: updatedItem.parentId,
+                    user: updatedItem.user,
+                  }
+                : reply
             ),
           };
         })
@@ -371,9 +420,7 @@ export default function CommunityFeed({
         method: "DELETE",
       });
 
-      const data = (await response.json().catch(() => null)) as
-        | { success?: boolean; error?: string }
-        | null;
+      const data = (await response.json().catch(() => null)) as DeleteMessageResponse;
 
       if (!response.ok || !data?.success) {
         throw new Error(data?.error || "Nachricht konnte nicht gelöscht werden.");
@@ -686,7 +733,10 @@ export default function CommunityFeed({
                   <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
                     <div className="mb-3 flex items-center gap-2 text-sm text-white/70">
                       <Reply className="h-4 w-4" />
-                      Antwort an <span className="font-medium text-white">{getDisplayName(post.user)}</span>
+                      Antwort an{" "}
+                      <span className="font-medium text-white">
+                        {getDisplayName(post.user)}
+                      </span>
                     </div>
 
                     <textarea
