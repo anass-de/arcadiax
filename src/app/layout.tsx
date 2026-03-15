@@ -1,7 +1,6 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
-import Script from "next/script";
 import { getServerSession } from "next-auth";
 
 import Providers from "@/app/providers";
@@ -101,19 +100,19 @@ export default async function RootLayout({
 
   return (
     <html lang="de" suppressHydrationWarning>
-      <body
-        className={`${inter.variable} min-h-screen bg-[#05070b] font-sans text-white antialiased`}
-      >
+      <head>
         {adsenseClient ? (
-          <Script
-            id="google-adsense"
+          <script
             async
-            strategy="afterInteractive"
             src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClient}`}
             crossOrigin="anonymous"
           />
         ) : null}
+      </head>
 
+      <body
+        className={`${inter.variable} min-h-screen bg-[#05070b] font-sans text-white antialiased`}
+      >
         <Providers>
           <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-[#05070b] text-white">
             <div className="pointer-events-none absolute inset-0 -z-10">
