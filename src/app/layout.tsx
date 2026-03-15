@@ -18,16 +18,64 @@ const inter = Inter({
 const adsenseClient = process.env.NEXT_PUBLIC_ADSENSE_CLIENT ?? "";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://arcadiax.de"),
+
   title: {
     default: "ArcadiaX",
     template: "%s | ArcadiaX",
   },
-  description: "ArcadiaX Releases Platform",
+
+  description:
+    "ArcadiaX is a platform for retro gaming, game releases and community discussions.",
+
   applicationName: "ArcadiaX",
+
+  keywords: [
+    "ArcadiaX",
+    "retro gaming",
+    "game releases",
+    "emulator games",
+    "retro platform",
+    "gaming community",
+  ],
+
+  authors: [{ name: "ArcadiaX" }],
+
   icons: {
     icon: "/favicon.png",
     shortcut: "/favicon.png",
     apple: "/icon.png",
+  },
+
+  robots: {
+    index: true,
+    follow: true,
+  },
+
+  openGraph: {
+    title: "ArcadiaX",
+    description:
+      "ArcadiaX is a platform for retro gaming, game releases and community discussions.",
+    url: "https://arcadiax.de",
+    siteName: "ArcadiaX",
+    locale: "de_DE",
+    type: "website",
+    images: [
+      {
+        url: "/cover.png",
+        width: 1200,
+        height: 630,
+        alt: "ArcadiaX",
+      },
+    ],
+  },
+
+  twitter: {
+    card: "summary_large_image",
+    title: "ArcadiaX",
+    description:
+      "ArcadiaX is a platform for retro gaming and game releases.",
+    images: ["/cover.png"],
   },
 };
 
