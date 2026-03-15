@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import { getServerSession } from "next-auth";
 
 import Providers from "@/app/providers";
@@ -100,22 +101,21 @@ export default async function RootLayout({
 
   return (
     <html lang="de" suppressHydrationWarning>
-      <head>
-        {adsenseClient && (
-          <script
+      <body
+        className={`${inter.variable} min-h-screen bg-[#05070b] font-sans text-white antialiased`}
+      >
+        {adsenseClient ? (
+          <Script
+            id="google-adsense"
+            strategy="beforeInteractive"
             async
             src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClient}`}
             crossOrigin="anonymous"
           />
-        )}
-      </head>
+        ) : null}
 
-      <body
-        className={`${inter.variable} min-h-screen bg-[#05070b] font-sans text-white antialiased`}
-      >
         <Providers>
           <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-[#05070b] text-white">
-            {/* Background */}
             <div className="pointer-events-none absolute inset-0 -z-10">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_30%),radial-gradient(circle_at_80%_20%,_rgba(255,255,255,0.04),_transparent_20%),linear-gradient(to_bottom,_#06080d,_#05070b)]" />
               <div className="absolute inset-x-0 top-0 h-px bg-white/10" />
