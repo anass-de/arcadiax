@@ -19,22 +19,44 @@ type SessionUser = {
 export default async function CommunityPage() {
   const session = await getServerSession(authOptions);
 
-  const posts = await prisma.communityPost.findMany({
-    orderBy: {
-      createdAt: "desc",
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          username: true,
-          image: true,
-          role: true,
+  const [posts, totalMessages] = await Promise.all([
+    prisma.communityPost.findMany({
+      where: {
+        parentId: null,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            image: true,
+            role: true,
+          },
+        },
+        replies: {
+          orderBy: {
+            createdAt: "asc",
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+                image: true,
+                role: true,
+              },
+            },
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.communityPost.count(),
+  ]);
 
   const user = session?.user as SessionUser | undefined;
 
@@ -47,6 +69,8 @@ export default async function CommunityPage() {
         role: user.role ?? null,
       }
     : null;
+
+  const totalReplies = posts.reduce((sum, post) => sum + post.replies.length, 0);
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
@@ -61,14 +85,14 @@ export default async function CommunityPage() {
             </div>
 
             <h1 className="mt-5 max-w-4xl text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
-              Exchange ideas, talk about releases, and connect with the community.
+              Exchange ideas, reply to others, and build real conversations.
             </h1>
 
             <p className="mt-5 max-w-3xl text-sm leading-7 text-white/70 sm:text-base lg:text-lg">
-              The community area is your place for discussion inside ArcadiaX.
-              Everyone can read messages, but only logged-in users can create new
-              posts. Each user can edit and delete their own messages, and admins
-              can remove any message when needed.
+              The community area is your discussion space inside ArcadiaX.
+              Everyone can read posts and replies. Logged-in users can write new
+              posts, answer other users, and manage their own content. Admins can
+              moderate the full discussion.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -76,10 +100,10 @@ export default async function CommunityPage() {
                 Public reading
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/80">
-                Login required to post
+                Login required to write
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/80">
-                Own posts editable
+                Replies like comments
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/80">
                 Admin moderation
@@ -92,9 +116,23 @@ export default async function CommunityPage() {
 
             <div className="mt-4 space-y-3">
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
-                <span className="text-sm text-white/70">Messages</span>
+                <span className="text-sm text-white/70">Main posts</span>
                 <span className="text-sm font-semibold text-white">
                   {posts.length}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                <span className="text-sm text-white/70">Replies</span>
+                <span className="text-sm font-semibold text-white">
+                  {totalReplies}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                <span className="text-sm text-white/70">All messages</span>
+                <span className="text-sm font-semibold text-white">
+                  {totalMessages}
                 </span>
               </div>
 
@@ -108,7 +146,9 @@ export default async function CommunityPage() {
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
                 <span className="text-sm text-white/70">Moderation</span>
                 <span className="text-sm font-semibold text-white">
-                  {currentUser?.role === "ADMIN" ? "Admin access" : "Standard access"}
+                  {currentUser?.role === "ADMIN"
+                    ? "Admin access"
+                    : "Standard access"}
                 </span>
               </div>
             </div>
@@ -120,12 +160,13 @@ export default async function CommunityPage() {
                   <span className="font-semibold text-white">
                     {currentUser.name || currentUser.username || "User"}
                   </span>
-                  . You can post new messages and manage your own content.
+                  . You can create posts, reply to other users, and manage your
+                  own messages.
                 </>
               ) : (
                 <>
-                  You are currently browsing as a guest. Sign in to write a new
-                  message and participate in the discussion.
+                  You are currently browsing as a guest. Sign in to create posts
+                  and reply to the discussion.
                 </>
               )}
             </div>

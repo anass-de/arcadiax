@@ -157,7 +157,12 @@ model CommunityPost {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  parentId String?
+  parent   CommunityPost?  @relation("CommunityReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  CommunityPost[] @relation("CommunityReplies")
+
   @@index([userId])
+  @@index([parentId])
   @@index([createdAt])
   @@map("community_posts")
 }

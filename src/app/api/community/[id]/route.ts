@@ -15,6 +15,14 @@ type SessionUser = {
   role?: string | null;
 };
 
+const communityUserSelect = {
+  id: true,
+  name: true,
+  username: true,
+  image: true,
+  role: true,
+} as const;
+
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const session = await getServerSession(authOptions);
@@ -36,6 +44,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       select: {
         id: true,
         userId: true,
+        parentId: true,
       },
     });
 
@@ -91,13 +100,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       },
       include: {
         user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            image: true,
-            role: true,
-          },
+          select: communityUserSelect,
         },
       },
     });
@@ -136,6 +139,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
       select: {
         id: true,
         userId: true,
+        parentId: true,
       },
     });
 
