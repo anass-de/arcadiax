@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import { getServerSession } from "next-auth";
 
 import Providers from "@/app/providers";
@@ -13,6 +14,8 @@ const inter = Inter({
   display: "swap",
   variable: "--font-inter",
 });
+
+const adsenseClient = process.env.NEXT_PUBLIC_ADSENSE_CLIENT ?? "";
 
 export const metadata: Metadata = {
   title: {
@@ -53,6 +56,16 @@ export default async function RootLayout({
       <body
         className={`${inter.variable} min-h-screen bg-[#05070b] font-sans text-white antialiased`}
       >
+        {adsenseClient ? (
+          <Script
+            id="google-adsense"
+            async
+            strategy="afterInteractive"
+            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClient}`}
+            crossOrigin="anonymous"
+          />
+        ) : null}
+
         <Providers>
           <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-[#05070b] text-white">
             <div className="pointer-events-none absolute inset-0 -z-10">

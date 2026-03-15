@@ -17,6 +17,7 @@ import {
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import AdBanner from "@/components/ads/AdBanner";
 
 type HomeMediaRow = {
   id: string;
@@ -104,14 +105,6 @@ function buildReleaseHref(slug?: string | null, id?: string) {
   }
 
   return id ? `/releases/${id}` : "/releases";
-}
-
-function getSafeDescription(text?: string | null) {
-  if (!text?.trim()) {
-    return "No description available.";
-  }
-
-  return text.length > 180 ? `${text.slice(0, 180)}...` : text;
 }
 
 export const dynamic = "force-dynamic";
@@ -314,6 +307,11 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <AdBanner
+        adSlot="1234567890"
+        className="mx-auto max-w-7xl rounded-3xl border border-white/10 bg-zinc-950/60 p-4"
+      />
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
           <div className="mb-4 inline-flex rounded-2xl border border-white/10 bg-black/20 p-3">
@@ -359,6 +357,11 @@ export default async function HomePage() {
           </p>
         </div>
       </section>
+
+      <AdBanner
+        adSlot="1234567891"
+        className="mx-auto max-w-7xl rounded-3xl border border-white/10 bg-zinc-950/60 p-4"
+      />
 
       <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -610,6 +613,11 @@ export default async function HomePage() {
           </div>
         )}
       </section>
+
+      <AdBanner
+        adSlot="1234567892"
+        className="mx-auto max-w-7xl rounded-3xl border border-white/10 bg-zinc-950/60 p-4"
+      />
 
       <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
