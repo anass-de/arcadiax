@@ -1,4 +1,8 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectsCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
@@ -22,10 +26,10 @@ const secretAccessKey = assertEnv(
   "R2_SECRET_ACCESS_KEY"
 );
 const bucketName = assertEnv(R2_BUCKET_NAME, "R2_BUCKET_NAME");
-const publicBaseUrl = assertEnv(R2_PUBLIC_BASE_URL, "R2_PUBLIC_BASE_URL").replace(
-  /\/+$/,
-  ""
-);
+const publicBaseUrl = assertEnv(
+  R2_PUBLIC_BASE_URL,
+  "R2_PUBLIC_BASE_URL"
+).replace(/\/+$/, "");
 
 export const r2Client = new S3Client({
   region: "auto",
@@ -45,7 +49,7 @@ function sanitizeFileName(fileName: string) {
     .normalize("NFKD")
     .replace(/[^\w.-]+/g, "-")
     .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
+    .replace(/^-|-+$/g, "")
     .toLowerCase()
     .slice(0, 80);
 
@@ -71,7 +75,7 @@ export function buildR2Key(params: {
     .toLowerCase()
     .replace(/[^\w-]+/g, "-")
     .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replace(/^-|-+$/g, "");
 
   const safeFileName = sanitizeFileName(params.fileName);
   const timestamp = Date.now();
@@ -100,6 +104,52 @@ export async function createPresignedUploadUrl(params: {
     uploadUrl,
     publicUrl,
     key: params.key,
+  };
+}
+
+function extractR2KeyFromUrl(url: string) {
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl) return null;
+
+  if (trimmedUrl.startsWith(`${publicBaseUrl}/`)) {
+    return trimmedUrl.slice(publicBaseUrl.length + 1);
+  }
+
+  try {
+    const parsed = new URL(trimmedUrl);
+    const key = parsed.pathname.replace(/^\/+/, "");
+    return key || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteR2ObjectsFromUrls(
+  urls: Array<string | null | undefined>
+) {
+  const keys = urls
+    .map((url) => (url ? extractR2KeyFromUrl(url) : null))
+    .filter((key): key is string => Boolean(key));
+
+  if (keys.length === 0) {
+    return { deleted: [], skipped: true };
+  }
+
+  const uniqueKeys = [...new Set(keys)];
+
+  await r2Client.send(
+    new DeleteObjectsCommand({
+      Bucket: bucketName,
+      Delete: {
+        Objects: uniqueKeys.map((Key) => ({ Key })),
+        Quiet: false,
+      },
+    })
+  );
+
+  return {
+    deleted: uniqueKeys,
+    skipped: false,
   };
 }
 
