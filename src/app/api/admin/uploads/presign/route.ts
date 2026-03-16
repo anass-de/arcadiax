@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     const fileName = String(body?.fileName ?? "").trim();
     const fileType = String(body?.fileType ?? "").trim();
     const folder = String(body?.folder ?? "uploads").trim();
-    const slug = String(body?.slug ?? "general").trim();
+    const slug = String(body?.slug ?? "general").trim() || "general";
 
     const rawFileSize = body?.fileSize;
     const fileSize =
@@ -129,6 +129,15 @@ export async function POST(request: Request) {
       key,
       contentType: fileType,
       expiresIn: 3600,
+    });
+
+    console.log("UPLOAD PRESIGN SUCCESS", {
+      key,
+      fileType,
+      folder,
+      slug,
+      hasUploadUrl: Boolean(result?.uploadUrl),
+      hasPublicUrl: Boolean(result?.publicUrl),
     });
 
     return NextResponse.json(result);

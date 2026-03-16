@@ -15,6 +15,13 @@ type UploadState = {
   error: string | null;
 };
 
+type PresignResponse = {
+  uploadUrl?: string;
+  publicUrl?: string;
+  key?: string;
+  error?: string;
+};
+
 const initialUploadState: UploadState = {
   isUploading: false,
   progress: 0,
@@ -69,8 +76,26 @@ function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function getReleaseMimeType(file: File) {
+  const rawType = file.type?.trim();
+  if (rawType) return rawType;
+
+  const lowerName = file.name.toLowerCase();
+
+  if (lowerName.endsWith(".zip")) {
+    return "application/zip";
+  }
+
+  if (lowerName.endsWith(".pdf")) {
+    return "application/pdf";
+  }
+
+  return "application/octet-stream";
+}
+
 function validateFile(file: File, kind: UploadKind) {
-  const fileType = file.type?.trim() || "application/octet-stream";
+  const fileType =
+    kind === "release" ? getReleaseMimeType(file) : file.type?.trim() || "";
 
   if (!Number.isFinite(file.size) || file.size <= 0) {
     return "Ungültige Datei.";
@@ -109,7 +134,11 @@ async function uploadFileWithProgress(args: {
   kind: UploadKind;
   onProgress: (progress: number) => void;
 }) {
-  const fileType = args.file.type?.trim() || "application/octet-stream";
+  const fileType =
+    args.kind === "release"
+      ? getReleaseMimeType(args.file)
+      : args.file.type?.trim() || "application/octet-stream";
+
   const folder = args.kind === "image" ? "media" : "releases";
 
   const prepareResponse = await fetch("/api/admin/uploads/presign", {
@@ -127,12 +156,7 @@ async function uploadFileWithProgress(args: {
   });
 
   const prepareData = (await prepareResponse.json().catch(() => null)) as
-    | {
-        error?: string;
-        uploadUrl?: string;
-        publicUrl?: string;
-        key?: string;
-      }
+    | PresignResponse
     | null;
 
   if (!prepareResponse.ok || !prepareData?.uploadUrl || !prepareData.publicUrl) {
@@ -146,6 +170,7 @@ async function uploadFileWithProgress(args: {
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+
     xhr.open("PUT", uploadUrl, true);
     xhr.setRequestHeader("Content-Type", fileType);
 
@@ -418,7 +443,7 @@ export default function NewReleaseForm() {
           fileUrl,
           fileName: releaseFile.name,
           fileSize: releaseFile.size,
-          mimeType: releaseFile.type || "application/octet-stream",
+          mimeType: getReleaseMimeType(releaseFile),
           imageUrl,
         }),
       });

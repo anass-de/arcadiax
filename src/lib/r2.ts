@@ -41,17 +41,19 @@ export const r2Client = new S3Client({
 });
 
 function sanitizeFileName(fileName: string) {
-  const parts = fileName.split(".");
+  const trimmed = fileName.trim() || "file";
+  const parts = trimmed.split(".");
   const extension = parts.length > 1 ? parts.pop() : "";
   const baseName = parts.join(".") || "file";
 
-  const safeBase = baseName
-    .normalize("NFKD")
-    .replace(/[^\w.-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-+$/g, "")
-    .toLowerCase()
-    .slice(0, 80);
+  const safeBase =
+    baseName
+      .normalize("NFKD")
+      .replace(/[^\w.-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase()
+      .slice(0, 80) || "file";
 
   const safeExt = extension
     ? extension
@@ -69,13 +71,17 @@ export function buildR2Key(params: {
   slug?: string;
   fileName: string;
 }) {
-  const folder = (params.folder ?? "uploads").replace(/^\/+|\/+$/g, "");
-  const slug = (params.slug ?? "general")
+  const folder = (params.folder ?? "uploads")
     .trim()
-    .toLowerCase()
-    .replace(/[^\w-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-+$/g, "");
+    .replace(/^\/+|\/+$/g, "") || "uploads";
+
+  const slug =
+    (params.slug ?? "general")
+      .trim()
+      .toLowerCase()
+      .replace(/[^\w-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "") || "general";
 
   const safeFileName = sanitizeFileName(params.fileName);
   const timestamp = Date.now();
@@ -91,7 +97,6 @@ export async function createPresignedUploadUrl(params: {
   const command = new PutObjectCommand({
     Bucket: bucketName,
     Key: params.key,
-    ContentType: params.contentType,
   });
 
   const uploadUrl = await getSignedUrl(r2Client, command, {
