@@ -1,19 +1,11 @@
-import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import {
-  ArrowLeft,
-  ArrowRight,
-  ExternalLink,
-  Filter,
-  MessageSquare,
-  Shield,
-  Trash2,
-} from "lucide-react";
+import { Filter, Shield } from "lucide-react";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import CommentsTable from "@/components/dashboard/comments/comments-table";
 
 export const dynamic = "force-dynamic";
 
@@ -29,23 +21,6 @@ type ReleaseOption = {
   title: string;
 };
 
-type CommentItem = {
-  id: string;
-  content: string;
-  createdAt: Date;
-  user: {
-    id: string;
-    name: string | null;
-    username: string | null;
-    email: string | null;
-  } | null;
-  release: {
-    id: string;
-    title: string;
-    slug: string | null;
-  } | null;
-};
-
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   const role = (session?.user as SessionUser | undefined)?.role ?? null;
@@ -59,31 +34,6 @@ async function requireAdmin() {
   }
 
   return session.user;
-}
-
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(date));
-}
-
-function getCommentAuthor(comment: CommentItem) {
-  return (
-    comment.user?.username ||
-    comment.user?.name ||
-    comment.user?.email ||
-    "Unbekannt"
-  );
-}
-
-function getReleaseHref(release: { id: string; slug: string | null }) {
-  return release.slug?.trim()
-    ? `/releases/${release.slug}`
-    : `/releases/${release.id}`;
 }
 
 async function deleteComment(formData: FormData) {
@@ -184,7 +134,7 @@ export default async function CommentsPage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const page = Math.min(requestedPage, totalPages);
 
-  const comments: CommentItem[] = await prisma.comment.findMany({
+  const comments = await prisma.comment.findMany({
     where,
     skip: (page - 1) * PAGE_SIZE,
     take: PAGE_SIZE,
@@ -198,17 +148,64 @@ export default async function CommentsPage({
           name: true,
           username: true,
           email: true,
+          image: true,
         },
       },
       release: {
         select: {
           id: true,
           title: true,
+          version: true,
           slug: true,
+        },
+      },
+      parent: {
+        select: {
+          id: true,
+          content: true,
+        },
+      },
+      _count: {
+        select: {
+          replies: true,
         },
       },
     },
   });
+
+  const normalizedComments = comments
+    .filter((comment) => comment.release)
+    .map((comment) => ({
+      id: comment.id,
+      content: comment.content,
+      createdAt: comment.createdAt.toISOString(),
+      parentId: comment.parentId,
+      user: {
+        id: comment.user?.id ?? "",
+        name: comment.user?.name ?? null,
+        username: comment.user?.username ?? null,
+        email: comment.user?.email ?? null,
+        image: comment.user?.image ?? null,
+      },
+      release: {
+        id: comment.release!.id,
+        title: comment.release!.title,
+        version: comment.release!.version ?? null,
+        slug: comment.release!.slug?.trim() || comment.release!.id,
+      },
+      parent: comment.parent
+        ? {
+            id: comment.parent.id,
+            content: comment.parent.content,
+          }
+        : null,
+      _count: {
+        replies: comment._count.replies,
+      },
+    }));
+
+  const prevHref = page > 1 ? buildPageHref(page - 1, releaseId) : null;
+  const nextHref = page < totalPages ? buildPageHref(page + 1, releaseId) : null;
 
   return (
     <div className="space-y-6">
@@ -217,22 +214,22 @@ export default async function CommentsPage({
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
               <Shield className="h-4 w-4" />
-              Kommentar Moderation
+              Comment Moderation
             </div>
 
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                Kommentare verwalten
+                Manage Comments
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-zinc-400 sm:text-base">
-                Verwalte alle Release-Kommentare, filtere nach Release und
-                entferne problematische Einträge direkt aus dem Admin-Bereich.
+                Moderate community discussions, filter comments by release, and
+                remove problematic entries from one central ArcadiaX admin area.
               </p>
             </div>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-300">
-            {total} Kommentar{total === 1 ? "" : "e"} insgesamt
+            {total} comment{total === 1 ? "" : "s"} total
           </div>
         </div>
       </section>
@@ -240,21 +237,21 @@ export default async function CommentsPage({
       <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
           <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-            Gesamt
+            Total
           </div>
           <div className="mt-2 text-3xl font-semibold text-white">{total}</div>
           <div className="mt-2 text-sm text-zinc-400">
-            Alle Kommentare im System
+            All comments in the system
           </div>
         </div>
 
         <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
           <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-            Seite
+            Page
           </div>
           <div className="mt-2 text-3xl font-semibold text-white">{page}</div>
           <div className="mt-2 text-sm text-zinc-400">
-            Von insgesamt {totalPages} Seiten
+            Out of {totalPages} pages
           </div>
         </div>
 
@@ -265,11 +262,11 @@ export default async function CommentsPage({
           <div className="mt-2 text-lg font-semibold text-white">
             {releaseId
               ? releases.find((release) => release.id === releaseId)?.title ||
-                "Release Filter aktiv"
-              : "Alle Releases"}
+                "Filtered release"
+              : "All releases"}
           </div>
           <div className="mt-2 text-sm text-zinc-400">
-            Aktuelle Kommentar-Auswahl
+            Current moderation selection
           </div>
         </div>
       </section>
@@ -282,7 +279,7 @@ export default async function CommentsPage({
           <div>
             <div className="text-sm font-medium text-zinc-500">Filter</div>
             <h2 className="text-2xl font-semibold text-white">
-              Kommentare eingrenzen
+              Narrow Comments
             </h2>
           </div>
         </div>
@@ -293,7 +290,7 @@ export default async function CommentsPage({
             defaultValue={releaseId ?? ""}
             className="rounded-2xl border border-white/10 bg-black/20 p-3 text-white outline-none transition focus:border-cyan-400/40 focus:bg-zinc-900"
           >
-            <option value="">Alle Releases</option>
+            <option value="">All releases</option>
 
             {releases.map((release) => (
               <option key={release.id} value={release.id}>
@@ -307,114 +304,19 @@ export default async function CommentsPage({
             className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
           >
             <Filter className="h-4 w-4" />
-            Filtern
+            Apply Filter
           </button>
         </form>
       </section>
 
-      <section className="space-y-4">
-        {comments.length === 0 ? (
-          <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-8 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-black/20">
-              <MessageSquare className="h-6 w-6 text-cyan-300" />
-            </div>
-            <h3 className="mt-4 text-lg font-semibold text-white">
-              Keine Kommentare gefunden
-            </h3>
-            <p className="mt-2 text-sm text-zinc-400">
-              Für die aktuelle Auswahl sind keine Kommentare vorhanden.
-            </p>
-          </div>
-        ) : (
-          comments.map((comment) => {
-            const author = getCommentAuthor(comment);
-
-            return (
-              <article
-                key={comment.id}
-                className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6"
-              >
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="text-base font-semibold text-white">
-                      {author}
-                    </div>
-                    <div className="mt-1 text-sm text-zinc-500">
-                      {comment.user?.email || "Keine E-Mail verfügbar"}
-                    </div>
-                  </div>
-
-                  <div className="text-xs text-zinc-500">
-                    {formatDate(comment.createdAt)}
-                  </div>
-                </div>
-
-                {comment.release && (
-                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-medium text-cyan-300">
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    Release: {comment.release.title}
-                  </div>
-                )}
-
-                <div className="mb-5 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-7 text-zinc-200">
-                  {comment.content}
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  {comment.release && (
-                    <Link
-                      href={getReleaseHref(comment.release)}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      Release ansehen
-                    </Link>
-                  )}
-
-                  <form action={deleteComment}>
-                    <input type="hidden" name="id" value={comment.id} />
-                    <button
-                      type="submit"
-                      className="inline-flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-200 transition hover:border-red-400/30 hover:bg-red-500/15"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Löschen
-                    </button>
-                  </form>
-                </div>
-              </article>
-            );
-          })
-        )}
-      </section>
-
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm text-zinc-500">
-          Seite {page} von {totalPages}
-        </div>
-
-        <div className="flex gap-3">
-          {page > 1 && (
-            <Link
-              href={buildPageHref(page - 1, releaseId)}
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Zurück
-            </Link>
-          )}
-
-          {page < totalPages && (
-            <Link
-              href={buildPageHref(page + 1, releaseId)}
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
-            >
-              Weiter
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          )}
-        </div>
-      </section>
+      <CommentsTable
+        comments={normalizedComments}
+        filteredCount={total}
+        currentPage={page}
+        totalPages={totalPages}
+        prevHref={prevHref}
+        nextHref={nextHref}
+      />
     </div>
   );
 }
