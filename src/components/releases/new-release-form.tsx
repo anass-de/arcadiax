@@ -48,6 +48,11 @@ const ALLOWED_RELEASE_TYPES = [
   "application/pdf",
 ];
 
+const PRESIGN_TIMEOUT_MS = 20_000;
+const UPLOAD_TIMEOUT_MS = 5 * 60_000;
+const MAX_UPLOAD_RETRIES = 3;
+const RETRY_DELAY_MS = 1_500;
+
 function slugify(value: string) {
   return value
     .normalize("NFKD")
@@ -74,6 +79,12 @@ function formatBytes(bytes: number) {
   }
 
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 function getReleaseMimeType(file: File) {
@@ -128,51 +139,45 @@ function validateFile(file: File, kind: UploadKind) {
   return null;
 }
 
-async function uploadFileWithProgress(args: {
+async function fetchJsonWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number
+) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+
+    return response;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Zeitüberschreitung beim Vorbereiten des Uploads.");
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function uploadViaXhrWithTimeout(args: {
+  uploadUrl: string;
   file: File;
-  slug: string;
-  kind: UploadKind;
+  fileType: string;
+  timeoutMs: number;
   onProgress: (progress: number) => void;
 }) {
-  const fileType =
-    args.kind === "release"
-      ? getReleaseMimeType(args.file)
-      : args.file.type?.trim() || "application/octet-stream";
-
-  const folder = args.kind === "image" ? "media" : "releases";
-
-  const prepareResponse = await fetch("/api/admin/uploads/presign", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      fileName: args.file.name,
-      fileType,
-      folder,
-      slug: args.slug,
-      fileSize: args.file.size,
-    }),
-  });
-
-  const prepareData = (await prepareResponse.json().catch(() => null)) as
-    | PresignResponse
-    | null;
-
-  if (!prepareResponse.ok || !prepareData?.uploadUrl || !prepareData.publicUrl) {
-    throw new Error(
-      prepareData?.error || "Upload konnte nicht vorbereitet werden."
-    );
-  }
-
-  const uploadUrl = prepareData.uploadUrl;
-  const publicUrl = prepareData.publicUrl;
-
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
 
-    xhr.open("PUT", uploadUrl, true);
-    xhr.setRequestHeader("Content-Type", fileType);
+    xhr.open("PUT", args.uploadUrl, true);
+    xhr.timeout = args.timeoutMs;
+    xhr.setRequestHeader("Content-Type", args.fileType);
 
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;
@@ -201,10 +206,108 @@ async function uploadFileWithProgress(args: {
       reject(new Error("Upload wurde abgebrochen."));
     };
 
+    xhr.ontimeout = () => {
+      reject(
+        new Error(
+          "Der Upload hat zu lange gedauert und wurde wegen Zeitüberschreitung beendet."
+        )
+      );
+    };
+
     xhr.send(args.file);
   });
+}
 
-  return publicUrl;
+async function uploadFileWithProgress(args: {
+  file: File;
+  slug: string;
+  kind: UploadKind;
+  onProgress: (progress: number) => void;
+}) {
+  const fileType =
+    args.kind === "release"
+      ? getReleaseMimeType(args.file)
+      : args.file.type?.trim() || "application/octet-stream";
+
+  const folder = args.kind === "image" ? "media" : "releases";
+
+  const prepareResponse = await fetchJsonWithTimeout(
+    "/api/admin/uploads/presign",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fileName: args.file.name,
+        fileType,
+        folder,
+        slug: args.slug,
+        fileSize: args.file.size,
+      }),
+    },
+    PRESIGN_TIMEOUT_MS
+  );
+
+  const prepareData = (await prepareResponse.json().catch(() => null)) as
+    | PresignResponse
+    | null;
+
+  if (!prepareResponse.ok || !prepareData?.uploadUrl || !prepareData.publicUrl) {
+    throw new Error(
+      prepareData?.error || "Upload konnte nicht vorbereitet werden."
+    );
+  }
+
+  const uploadUrl = prepareData.uploadUrl;
+  const publicUrl = prepareData.publicUrl;
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt += 1) {
+    const cappedProgressStart =
+      MAX_UPLOAD_RETRIES > 1
+        ? Math.min(90, Math.max(0, Math.round(((attempt - 1) / MAX_UPLOAD_RETRIES) * 100)))
+        : 0;
+
+    args.onProgress(cappedProgressStart);
+
+    try {
+      await uploadViaXhrWithTimeout({
+        uploadUrl,
+        file: args.file,
+        fileType,
+        timeoutMs: UPLOAD_TIMEOUT_MS,
+        onProgress(progress) {
+          const normalizedProgress =
+            MAX_UPLOAD_RETRIES > 1
+              ? Math.min(
+                  99,
+                  Math.round(
+                    ((attempt - 1 + progress / 100) / MAX_UPLOAD_RETRIES) * 100
+                  )
+                )
+              : progress;
+
+          args.onProgress(normalizedProgress);
+        },
+      });
+
+      args.onProgress(100);
+      return publicUrl;
+    } catch (error) {
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error("Upload fehlgeschlagen. Bitte versuche es erneut.");
+
+      if (attempt < MAX_UPLOAD_RETRIES) {
+        await wait(RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  throw lastError ?? new Error("Upload fehlgeschlagen.");
 }
 
 export default function NewReleaseForm() {
