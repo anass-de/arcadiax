@@ -15,21 +15,18 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-const adsenseClient = process.env.NEXT_PUBLIC_ADSENSE_CLIENT ?? "";
+const adsenseClient = process.env.NEXT_PUBLIC_ADSENSE_CLIENT?.trim() ?? "";
+const hasAdsense = adsenseClient.startsWith("ca-pub-");
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://arcadiax.de"),
-
   title: {
     default: "ArcadiaX",
     template: "%s | ArcadiaX",
   },
-
   description:
     "ArcadiaX is a platform for retro gaming, game releases and community discussions.",
-
   applicationName: "ArcadiaX",
-
   keywords: [
     "ArcadiaX",
     "retro gaming",
@@ -38,20 +35,16 @@ export const metadata: Metadata = {
     "retro platform",
     "gaming community",
   ],
-
   authors: [{ name: "ArcadiaX" }],
-
   icons: {
     icon: "/favicon.png",
     shortcut: "/favicon.png",
     apple: "/icon.png",
   },
-
   robots: {
     index: true,
     follow: true,
   },
-
   openGraph: {
     title: "ArcadiaX",
     description:
@@ -69,7 +62,6 @@ export const metadata: Metadata = {
       },
     ],
   },
-
   twitter: {
     card: "summary_large_image",
     title: "ArcadiaX",
@@ -104,7 +96,7 @@ export default async function RootLayout({
       <body
         className={`${inter.variable} min-h-screen bg-[#05070b] font-sans text-white antialiased`}
       >
-        {adsenseClient ? (
+        {hasAdsense ? (
           <Script
             id="google-adsense"
             strategy="beforeInteractive"
