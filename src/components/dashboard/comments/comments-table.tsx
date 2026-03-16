@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   MessageSquare,
+  Package,
   Reply,
   Trash2,
   User,
-  Package,
-  AlertTriangle,
 } from "lucide-react";
 
 type CommentItem = {
@@ -54,7 +54,7 @@ function getAuthorLabel(comment: CommentItem) {
     comment.user.username ||
     comment.user.name ||
     comment.user.email ||
-    "Unbekannt"
+    "Unknown user"
   );
 }
 
@@ -69,6 +69,16 @@ function getReleaseLabel(comment: CommentItem) {
 function truncate(text: string, max = 140) {
   if (text.length <= max) return text;
   return `${text.slice(0, max).trim()}…`;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 export default function CommentsTable({
@@ -123,23 +133,41 @@ export default function CommentsTable({
 
   return (
     <>
-      <section className="rounded-[30px] border border-white/10 bg-white/[0.03]">
-        <div className="flex flex-col gap-4 border-b border-white/10 px-6 py-5 sm:px-8">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(108,92,231,0.08),rgba(255,255,255,0.02))] shadow-[0_0_0_1px_rgba(255,255,255,0.02)] backdrop-blur-xl">
+        <div className="border-b border-white/10 px-6 py-6 sm:px-8">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <div className="text-sm font-medium text-white/45">Ergebnisse</div>
-              <h2 className="text-2xl font-semibold text-white">
-                Kommentar-Tabelle
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-300">
+                <MessageSquare className="h-3.5 w-3.5" />
+                Comment moderation
+              </div>
+
+              <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                Community Comments
               </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
+                Review, manage, and remove release comments in a clean ArcadiaX
+                moderation workspace.
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <div className="rounded-full border border-white/10 bg-[#07090f] px-4 py-2 text-sm text-white/60">
-                {filteredCount} Treffer
+              <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-white/35">
+                  Results
+                </div>
+                <div className="mt-1 text-lg font-semibold text-white">
+                  {filteredCount}
+                </div>
               </div>
 
-              <div className="rounded-full border border-white/10 bg-[#07090f] px-4 py-2 text-sm text-white/60">
-                {selectedCount} ausgewählt
+              <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-white/35">
+                  Selected
+                </div>
+                <div className="mt-1 text-lg font-semibold text-white">
+                  {selectedCount}
+                </div>
               </div>
 
               <button
@@ -149,25 +177,35 @@ export default function CommentsTable({
                 className={`inline-flex items-center gap-2 rounded-2xl border px-5 py-3 text-sm font-semibold transition ${
                   selectedCount === 0
                     ? "cursor-not-allowed border-white/10 bg-white/[0.03] text-white/30"
-                    : "border-red-500/20 bg-red-500/10 text-red-200 hover:border-red-400/30 hover:bg-red-500/15"
+                    : "border-red-500/25 bg-red-500/10 text-red-200 hover:border-red-400/40 hover:bg-red-500/15"
                 }`}
               >
                 <Trash2 className="h-4 w-4" />
-                Auswahl löschen
+                Delete selected
               </button>
             </div>
           </div>
         </div>
 
         {comments.length === 0 ? (
-          <div className="px-6 py-10 text-sm text-white/55 sm:px-8">
-            Keine Kommentare für diese Filter gefunden.
+          <div className="px-6 py-12 sm:px-8">
+            <div className="rounded-[28px] border border-dashed border-white/10 bg-black/20 px-6 py-10 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03]">
+                <MessageSquare className="h-6 w-6 text-white/40" />
+              </div>
+              <h3 className="text-lg font-semibold text-white">
+                No comments found
+              </h3>
+              <p className="mt-2 text-sm text-white/55">
+                There are no comments matching the current filter.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
               <thead>
-                <tr className="border-b border-white/10 text-left text-xs uppercase tracking-[0.22em] text-white/35">
+                <tr className="border-b border-white/10 bg-white/[0.02] text-left text-[11px] uppercase tracking-[0.24em] text-white/35">
                   <th className="px-6 py-4 sm:px-8">
                     <div className="flex items-center gap-3">
                       <input
@@ -176,14 +214,14 @@ export default function CommentsTable({
                         onChange={toggleAllVisible}
                         className="h-4 w-4 rounded border-white/20 bg-[#07090f]"
                       />
-                      <span>Auswahl</span>
+                      <span>Select</span>
                     </div>
                   </th>
-                  <th className="px-6 py-4 sm:px-8">Typ</th>
-                  <th className="px-6 py-4 sm:px-8">Autor</th>
+                  <th className="px-6 py-4 sm:px-8">Type</th>
+                  <th className="px-6 py-4 sm:px-8">Author</th>
                   <th className="px-6 py-4 sm:px-8">Release</th>
-                  <th className="px-6 py-4 sm:px-8">Inhalt</th>
-                  <th className="px-6 py-4 sm:px-8">Aktionen</th>
+                  <th className="px-6 py-4 sm:px-8">Comment</th>
+                  <th className="px-6 py-4 sm:px-8">Actions</th>
                 </tr>
               </thead>
 
@@ -195,9 +233,9 @@ export default function CommentsTable({
                   return (
                     <tr
                       key={comment.id}
-                      className="border-b border-white/5 align-top transition hover:bg-white/[0.02]"
+                      className="border-b border-white/5 align-top transition hover:bg-white/[0.025]"
                     >
-                      <td className="px-6 py-5 sm:px-8">
+                      <td className="px-6 py-6 sm:px-8">
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -206,83 +244,101 @@ export default function CommentsTable({
                         />
                       </td>
 
-                      <td className="px-6 py-5 sm:px-8">
-                        <span className="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-200">
+                      <td className="px-6 py-6 sm:px-8">
+                        <span
+                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
+                            isReply
+                              ? "border-cyan-400/20 bg-cyan-400/10 text-cyan-300"
+                              : "border-[#6c5ce7]/25 bg-[#6c5ce7]/10 text-[#b7abff]"
+                          }`}
+                        >
                           {isReply ? (
                             <Reply className="h-3.5 w-3.5" />
                           ) : (
                             <MessageSquare className="h-3.5 w-3.5" />
                           )}
-                          {isReply ? "Reply" : "Kommentar"}
+                          {isReply ? "Reply" : "Comment"}
                         </span>
                       </td>
 
-                      <td className="px-6 py-5 sm:px-8">
+                      <td className="px-6 py-6 sm:px-8">
                         <div className="flex items-start gap-3">
-                          <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-                            <User className="h-4 w-4 text-blue-300" />
+                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-black/30">
+                            <User className="h-4 w-4 text-[#9f8cff]" />
                           </div>
-                          <div>
-                            <div className="font-medium text-white">
+                          <div className="min-w-0">
+                            <div className="font-semibold text-white">
                               {getAuthorLabel(comment)}
                             </div>
-                            <div className="text-sm text-white/45">
-                              {comment.user.email || "—"}
+                            <div className="mt-1 text-sm text-white/45">
+                              {comment.user.email || "No email provided"}
                             </div>
                           </div>
                         </div>
                       </td>
 
-                      <td className="px-6 py-5 sm:px-8">
+                      <td className="px-6 py-6 sm:px-8">
                         <div className="flex items-start gap-3">
-                          <div className="rounded-2xl border border-white/10 bg-[#07090f] p-3">
-                            <Package className="h-4 w-4 text-blue-300" />
+                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-black/30">
+                            <Package className="h-4 w-4 text-cyan-300" />
                           </div>
-                          <div>
-                            <div className="font-medium text-white">
+                          <div className="min-w-0">
+                            <div className="font-semibold text-white">
                               {getReleaseLabel(comment)}
                             </div>
-                            <div className="text-sm text-white/45">
+                            <div className="mt-1 text-sm text-white/45">
                               /releases/{comment.release.slug}
                             </div>
                           </div>
                         </div>
                       </td>
 
-                      <td className="px-6 py-5 sm:px-8">
-                        <div className="space-y-2">
-                          <p className="max-w-xl text-sm leading-6 text-white/75">
+                      <td className="px-6 py-6 sm:px-8">
+                        <div className="max-w-xl space-y-3">
+                          <p className="rounded-2xl border border-white/8 bg-black/20 px-4 py-4 text-sm leading-7 text-white/80">
                             {truncate(comment.content, 180)}
                           </p>
 
                           {comment.parent ? (
-                            <div className="rounded-2xl border border-white/10 bg-[#07090f] px-4 py-3 text-xs text-white/50">
-                              <span className="text-white/65">Antwort auf:</span>{" "}
+                            <div className="rounded-2xl border border-cyan-400/10 bg-cyan-400/[0.05] px-4 py-3 text-xs leading-6 text-white/55">
+                              <span className="font-semibold text-cyan-300">
+                                Replying to:
+                              </span>{" "}
                               {truncate(comment.parent.content, 100)}
                             </div>
                           ) : null}
 
                           {!isReply && comment._count.replies > 0 ? (
-                            <div className="text-xs text-white/45">
-                              {comment._count.replies} Replies
+                            <div className="text-xs font-medium text-white/45">
+                              {comment._count.replies} repl
+                              {comment._count.replies === 1 ? "y" : "ies"}
                             </div>
                           ) : null}
 
-                          <div className="text-xs text-white/35">
-                            {new Date(comment.createdAt).toLocaleString("de-DE")}
+                          <div className="text-xs uppercase tracking-[0.18em] text-white/30">
+                            {formatDate(comment.createdAt)}
                           </div>
                         </div>
                       </td>
 
-                      <td className="px-6 py-5 sm:px-8">
-                        <button
-                          type="button"
-                          onClick={() => setSingleDeleteId(comment.id)}
-                          className="inline-flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-400/30 hover:bg-red-500/15"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Löschen
-                        </button>
+                      <td className="px-6 py-6 sm:px-8">
+                        <div className="flex flex-col gap-3">
+                          <Link
+                            href={`/releases/${comment.release.slug}`}
+                            className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+                          >
+                            View release
+                          </Link>
+
+                          <button
+                            type="button"
+                            onClick={() => setSingleDeleteId(comment.id)}
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-2.5 text-sm font-semibold text-red-200 transition hover:border-red-400/40 hover:bg-red-500/15"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -294,7 +350,7 @@ export default function CommentsTable({
 
         <div className="flex flex-col gap-4 border-t border-white/10 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
           <div className="text-sm text-white/55">
-            Seite <span className="font-semibold text-white">{currentPage}</span> von{" "}
+            Page <span className="font-semibold text-white">{currentPage}</span> of{" "}
             <span className="font-semibold text-white">{totalPages}</span>
           </div>
 
@@ -305,12 +361,12 @@ export default function CommentsTable({
                 className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-medium text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
               >
                 <ChevronLeft className="h-4 w-4" />
-                Zurück
+                Previous
               </Link>
             ) : (
               <span className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-medium text-white/30">
                 <ChevronLeft className="h-4 w-4" />
-                Zurück
+                Previous
               </span>
             )}
 
@@ -319,12 +375,12 @@ export default function CommentsTable({
                 href={nextHref}
                 className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-medium text-white/80 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
               >
-                Weiter
+                Next
                 <ChevronRight className="h-4 w-4" />
               </Link>
             ) : (
               <span className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-medium text-white/30">
-                Weiter
+                Next
                 <ChevronRight className="h-4 w-4" />
               </span>
             )}
@@ -333,20 +389,20 @@ export default function CommentsTable({
       </section>
 
       {singleDeleteId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4">
-          <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#0b0f17] p-6 shadow-2xl">
-            <div className="mb-5 flex items-start gap-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[30px] border border-white/10 bg-[#0b0f17] p-6 shadow-2xl">
+            <div className="mb-6 flex items-start gap-4">
               <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3">
                 <AlertTriangle className="h-5 w-5 text-red-300" />
               </div>
 
               <div>
                 <h3 className="text-xl font-semibold text-white">
-                  Kommentar löschen?
+                  Delete this comment?
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-white/60">
-                  Möchtest du diesen Kommentar wirklich löschen? Diese Aktion kann
-                  nicht rückgängig gemacht werden.
+                  This action will permanently remove the selected comment and
+                  cannot be undone.
                 </p>
               </div>
             </div>
@@ -357,16 +413,16 @@ export default function CommentsTable({
                 onClick={closeSingleDeleteModal}
                 className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-medium text-white/75 transition hover:bg-white/[0.06]"
               >
-                Abbrechen
+                Cancel
               </button>
 
               <form action={`/api/admin/comments/${singleDeleteId}`} method="POST">
                 <input type="hidden" name="_method" value="DELETE" />
                 <button
                   type="submit"
-                  className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-400/30 hover:bg-red-500/15"
+                  className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-400/40 hover:bg-red-500/15"
                 >
-                  Ja, löschen
+                  Yes, delete
                 </button>
               </form>
             </div>
@@ -375,22 +431,22 @@ export default function CommentsTable({
       ) : null}
 
       {bulkDeleteOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4">
-          <div className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#0b0f17] p-6 shadow-2xl">
-            <div className="mb-5 flex items-start gap-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[30px] border border-white/10 bg-[#0b0f17] p-6 shadow-2xl">
+            <div className="mb-6 flex items-start gap-4">
               <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3">
                 <AlertTriangle className="h-5 w-5 text-red-300" />
               </div>
 
               <div>
                 <h3 className="text-xl font-semibold text-white">
-                  Ausgewählte Kommentare löschen?
+                  Delete selected comments?
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-white/60">
-                  Möchtest du wirklich{" "}
+                  You are about to permanently remove{" "}
                   <span className="font-semibold text-white">{selectedCount}</span>{" "}
-                  ausgewählte Kommentare löschen? Diese Aktion kann nicht
-                  rückgängig gemacht werden.
+                  selected comment{selectedCount === 1 ? "" : "s"}. This action
+                  cannot be undone.
                 </p>
               </div>
             </div>
@@ -401,7 +457,7 @@ export default function CommentsTable({
                 onClick={closeBulkDeleteModal}
                 className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-medium text-white/75 transition hover:bg-white/[0.06]"
               >
-                Abbrechen
+                Cancel
               </button>
 
               <form action="/api/admin/comments/bulk-delete" method="POST">
@@ -410,9 +466,9 @@ export default function CommentsTable({
                 ))}
                 <button
                   type="submit"
-                  className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-400/30 hover:bg-red-500/15"
+                  className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-400/40 hover:bg-red-500/15"
                 >
-                  Ja, Auswahl löschen
+                  Yes, delete selected
                 </button>
               </form>
             </div>
