@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     const result = await createPresignedUploadUrl({
       key,
       contentType: fileType,
-      expiresIn: 120,
+      expiresIn: 3600,
     });
 
     return NextResponse.json(result);
