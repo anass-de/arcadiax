@@ -4,6 +4,10 @@ type PresignResponse = {
   key: string;
 };
 
+type PresignErrorResponse = {
+  error?: string;
+};
+
 export async function uploadFileToR2(params: {
   file: File;
   folder: "releases" | "media" | "avatars";
@@ -24,14 +28,24 @@ export async function uploadFileToR2(params: {
     }),
   });
 
-  const presignData = (await presignResponse.json()) as
+  const presignData = (await presignResponse.json().catch(() => null)) as
     | PresignResponse
-    | { error?: string };
+    | PresignErrorResponse
+    | null;
 
-  if (!presignResponse.ok || !("uploadUrl" in presignData)) {
-    throw new Error(
-      presignData?.error || "Presigned URL konnte nicht erstellt werden."
-    );
+  if (
+    !presignResponse.ok ||
+    !presignData ||
+    !("uploadUrl" in presignData) ||
+    !presignData.uploadUrl ||
+    !presignData.publicUrl
+  ) {
+    const errorMessage =
+      presignData && "error" in presignData && presignData.error
+        ? presignData.error
+        : "Presigned URL konnte nicht erstellt werden.";
+
+    throw new Error(errorMessage);
   }
 
   const uploadResponse = await fetch(presignData.uploadUrl, {
