@@ -23,6 +23,24 @@ const initialUploadState: UploadState = {
   error: null,
 };
 
+const MAX_SINGLE_UPLOAD_SIZE = 500 * 1024 * 1024; // 500 MB
+const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024; // 20 MB
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+];
+
+const ALLOWED_RELEASE_TYPES = [
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/x-zip",
+  "application/octet-stream",
+  "application/pdf",
+];
+
 function slugify(value: string) {
   return value
     .normalize("NFKD")
@@ -51,6 +69,40 @@ function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function validateFile(file: File, kind: UploadKind) {
+  const fileType = file.type?.trim() || "application/octet-stream";
+
+  if (!Number.isFinite(file.size) || file.size <= 0) {
+    return "Ungültige Datei.";
+  }
+
+  if (kind === "image") {
+    if (!ALLOWED_IMAGE_TYPES.includes(fileType)) {
+      return "Nur JPG, PNG, WEBP oder GIF sind als Bild erlaubt.";
+    }
+
+    if (file.size > MAX_IMAGE_UPLOAD_SIZE) {
+      return `Das Bild ist zu groß. Maximal ${formatBytes(
+        MAX_IMAGE_UPLOAD_SIZE
+      )} sind erlaubt.`;
+    }
+
+    return null;
+  }
+
+  if (!ALLOWED_RELEASE_TYPES.includes(fileType)) {
+    return "Nur ZIP oder PDF sind als Release-Datei erlaubt.";
+  }
+
+  if (file.size > MAX_SINGLE_UPLOAD_SIZE) {
+    return `Die Datei ist zu groß. Maximal ${formatBytes(
+      MAX_SINGLE_UPLOAD_SIZE
+    )} sind erlaubt.`;
+  }
+
+  return null;
+}
+
 async function uploadFileWithProgress(args: {
   file: File;
   slug: string;
@@ -70,6 +122,7 @@ async function uploadFileWithProgress(args: {
       fileType,
       folder,
       slug: args.slug,
+      fileSize: args.file.size,
     }),
   });
 
@@ -162,20 +215,64 @@ export default function NewReleaseForm() {
 
   function handleReleaseFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
+
+    if (!file) {
+      setReleaseFile(null);
+      setReleaseUpload(initialUploadState);
+      return;
+    }
+
+    const validationError = validateFile(file, "release");
+
+    if (validationError) {
+      setReleaseFile(null);
+      setReleaseUpload({
+        ...initialUploadState,
+        fileName: file.name,
+        error: validationError,
+      });
+      setFormError(null);
+      event.target.value = "";
+      return;
+    }
+
     setReleaseFile(file);
     setReleaseUpload({
       ...initialUploadState,
-      fileName: file?.name ?? null,
+      fileName: file.name,
+      error: null,
     });
     setFormError(null);
   }
 
   function handleImageFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
+
+    if (!file) {
+      setImageFile(null);
+      setImageUpload(initialUploadState);
+      return;
+    }
+
+    const validationError = validateFile(file, "image");
+
+    if (validationError) {
+      setImageFile(null);
+      setImageUpload({
+        ...initialUploadState,
+        fileName: file.name,
+        error: validationError,
+      });
+      setFormError(null);
+      event.target.value = "";
+      return;
+    }
+
     setImageFile(file);
     setImageUpload({
       ...initialUploadState,
-      fileName: file?.name ?? null,
+      fileName: file.name,
+      error: null,
     });
     setFormError(null);
   }
@@ -191,6 +288,8 @@ export default function NewReleaseForm() {
       return null;
     }
 
+    const file = args.file;
+
     if (args.kind === "release" && releaseUpload.uploadedUrl) {
       return releaseUpload.uploadedUrl;
     }
@@ -204,14 +303,14 @@ export default function NewReleaseForm() {
     setState({
       isUploading: true,
       progress: 0,
-      fileName: args.file.name,
+      fileName: file.name,
       uploadedUrl: null,
       error: null,
     });
 
     try {
       const uploadedUrl = await uploadFileWithProgress({
-        file: args.file,
+        file,
         kind: args.kind,
         slug: effectiveSlug,
         onProgress(progress) {
@@ -219,7 +318,7 @@ export default function NewReleaseForm() {
             ...prev,
             isUploading: true,
             progress,
-            fileName: args.file?.name ?? prev.fileName,
+            fileName: file.name,
             error: null,
           }));
         },
@@ -228,7 +327,7 @@ export default function NewReleaseForm() {
       setState({
         isUploading: false,
         progress: 100,
-        fileName: args.file.name,
+        fileName: file.name,
         uploadedUrl,
         error: null,
       });
@@ -243,7 +342,7 @@ export default function NewReleaseForm() {
       setState({
         isUploading: false,
         progress: 0,
-        fileName: args.file.name,
+        fileName: file.name,
         uploadedUrl: null,
         error: message,
       });
@@ -275,6 +374,20 @@ export default function NewReleaseForm() {
     if (!releaseFile) {
       setFormError("Bitte wähle eine Release-Datei aus.");
       return;
+    }
+
+    const releaseValidationError = validateFile(releaseFile, "release");
+    if (releaseValidationError) {
+      setFormError(releaseValidationError);
+      return;
+    }
+
+    if (imageFile) {
+      const imageValidationError = validateFile(imageFile, "image");
+      if (imageValidationError) {
+        setFormError(imageValidationError);
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -450,19 +563,22 @@ export default function NewReleaseForm() {
           </label>
           <input
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp,image/gif"
             onChange={handleImageFileChange}
             disabled={anyBusy}
             className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
           />
           <p className="mt-2 text-xs text-zinc-500">
-            Optional. Bild für Karten, Listen und Vorschau.
+            Optional. Erlaubt: JPG, PNG, WEBP, GIF. Maximal{" "}
+            {formatBytes(MAX_IMAGE_UPLOAD_SIZE)}.
           </p>
 
           {imageFile ? (
             <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-zinc-300">
               <div className="font-medium text-white">{imageFile.name}</div>
-              <div className="mt-1 text-zinc-500">{formatBytes(imageFile.size)}</div>
+              <div className="mt-1 text-zinc-500">
+                {formatBytes(imageFile.size)}
+              </div>
             </div>
           ) : null}
 
@@ -499,13 +615,15 @@ export default function NewReleaseForm() {
           </label>
           <input
             type="file"
+            accept=".zip,.pdf,application/zip,application/x-zip-compressed,application/x-zip,application/pdf"
             onChange={handleReleaseFileChange}
             required
             disabled={anyBusy}
             className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
           />
           <p className="mt-2 text-xs text-zinc-500">
-            Pflichtfeld. Das ist die eigentliche Release-Datei zum Download.
+            Pflichtfeld. Erlaubt: ZIP oder PDF. Maximal{" "}
+            {formatBytes(MAX_SINGLE_UPLOAD_SIZE)}.
           </p>
 
           {releaseFile ? (
