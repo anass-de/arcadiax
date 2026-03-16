@@ -6,8 +6,8 @@ import { getServerSession } from "next-auth";
 
 import Providers from "@/app/providers";
 import { authOptions } from "@/lib/auth";
-import SiteNavbar from "@/components/layout/site-navbar";
-import SiteFooter from "@/components/layout/site-footer";
+import SiteNavbar from "@/components/Navbar";
+import SiteFooter from "@/components/Footer";
 import AdBanner from "@/components/ads/AdBanner";
 
 const inter = Inter({

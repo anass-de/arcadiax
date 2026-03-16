@@ -16,7 +16,7 @@ import {
 
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
-import SubmitButton from "@/components/ui/SubmitButton";
+import SubmitButton from "@/components/SubmitButton";
 
 type PageProps = {
   params: Promise<{
@@ -52,7 +52,7 @@ function getSessionUser(
 }
 
 function formatDateTime(date: Date) {
-  return new Intl.DateTimeFormat("de-DE", {
+  return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -90,7 +90,7 @@ function getSupabaseAdmin() {
 
   if (!url || !serviceRoleKey) {
     throw new Error(
-      "Supabase ist nicht korrekt konfiguriert. NEXT_PUBLIC_SUPABASE_URL oder SUPABASE_SERVICE_ROLE_KEY fehlt."
+      "Supabase is not configured correctly. NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing."
     );
   }
 
@@ -137,7 +137,7 @@ async function removeFileFromStorage(publicUrl: string | null | undefined) {
   const { error } = await supabase.storage.from(bucket).remove([filePath]);
 
   if (error) {
-    console.error("Konnte alte Datei nicht löschen:", error.message);
+    console.error("Could not delete old file:", error.message);
   }
 }
 
@@ -159,7 +159,7 @@ async function uploadFileToStorage(args: {
   });
 
   if (error) {
-    throw new Error(`Upload fehlgeschlagen: ${error.message}`);
+    throw new Error(`Upload failed: ${error.message}`);
   }
 
   const {
@@ -174,11 +174,11 @@ function validateImageFile(file: File) {
   const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
   if (!allowedTypes.includes(file.type)) {
-    throw new Error("Ungültiges Bildformat. Erlaubt sind JPG, PNG, WEBP und GIF.");
+    throw new Error("Invalid image format. Allowed: JPG, PNG, WEBP, and GIF.");
   }
 
   if (file.size > maxSize) {
-    throw new Error("Das Bild ist zu groß. Maximal erlaubt sind 10 MB.");
+    throw new Error("The image is too large. Maximum allowed size is 10 MB.");
   }
 }
 
@@ -186,7 +186,7 @@ function validateReleaseFile(file: File) {
   const maxSize = 500 * 1024 * 1024;
 
   if (file.size > maxSize) {
-    throw new Error("Die Release-Datei ist zu groß. Maximal erlaubt sind 500 MB.");
+    throw new Error("The release file is too large. Maximum allowed size is 500 MB.");
   }
 }
 
@@ -236,7 +236,7 @@ function buildEditUrl(
 }
 
 function getStatusLabel(status: "DRAFT" | "PUBLISHED") {
-  return status === "PUBLISHED" ? "Veröffentlicht" : "Entwurf";
+  return status === "PUBLISHED" ? "Published" : "Draft";
 }
 
 function getStatusClasses(status: "DRAFT" | "PUBLISHED") {
@@ -244,7 +244,7 @@ function getStatusClasses(status: "DRAFT" | "PUBLISHED") {
     return "border border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
   }
 
-  return "border border-zinc-700 bg-zinc-800/70 text-zinc-300";
+  return "border border-white/10 bg-white/[0.03] text-white/70";
 }
 
 export default async function EditReleasePage({
@@ -306,7 +306,7 @@ export default async function EditReleasePage({
     const releaseId = String(formData.get("releaseId") || "").trim();
 
     if (!releaseId) {
-      redirect(buildEditUrl(id, { error: "Ungültige Release-ID." }));
+      redirect(buildEditUrl(id, { error: "Invalid release ID." }));
     }
 
     try {
@@ -323,15 +323,15 @@ export default async function EditReleasePage({
       const releaseFile = formData.get("releaseFile");
 
       if (!title) {
-        throw new Error("Titel darf nicht leer sein.");
+        throw new Error("Title cannot be empty.");
       }
 
       if (!version) {
-        throw new Error("Version darf nicht leer sein.");
+        throw new Error("Version cannot be empty.");
       }
 
       if (status !== "DRAFT" && status !== "PUBLISHED") {
-        throw new Error("Ungültiger Status.");
+        throw new Error("Invalid status.");
       }
 
       const existing = await prisma.release.findUnique({
@@ -345,7 +345,7 @@ export default async function EditReleasePage({
       });
 
       if (!existing) {
-        throw new Error("Release nicht gefunden.");
+        throw new Error("Release not found.");
       }
 
       let nextImageUrl = existing.imageUrl;
@@ -356,7 +356,7 @@ export default async function EditReleasePage({
         const normalizedSlug = slugify(slugInput);
 
         if (!normalizedSlug) {
-          throw new Error("Der Slug ist ungültig.");
+          throw new Error("The slug is invalid.");
         }
 
         nextSlug = await createUniqueSlug(normalizedSlug, releaseId);
@@ -393,7 +393,7 @@ export default async function EditReleasePage({
 
       if (!nextFileUrl) {
         throw new Error(
-          "Es muss mindestens eine Release-Datei vorhanden sein. Bitte wähle eine Datei vom Computer aus."
+          "At least one release file is required. Please choose a file from your computer."
         );
       }
 
@@ -424,12 +424,12 @@ export default async function EditReleasePage({
         nextSlug ? `/releases/${nextSlug}` : `/releases/${releaseId}`
       );
     } catch (error) {
-      console.error("Fehler beim Aktualisieren des Releases:", error);
+      console.error("Error updating release:", error);
 
       const message =
         error instanceof Error
           ? error.message
-          : "Beim Speichern ist ein unbekannter Fehler aufgetreten.";
+          : "An unknown error occurred while saving.";
 
       redirect(
         buildEditUrl(releaseId, {
@@ -440,7 +440,7 @@ export default async function EditReleasePage({
 
     redirect(
       buildEditUrl(releaseId, {
-        success: "Änderungen wurden erfolgreich gespeichert.",
+        success: "Your changes have been saved successfully.",
       })
     );
   }
@@ -450,22 +450,25 @@ export default async function EditReleasePage({
     : `/releases/${release.id}`;
 
   return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black p-6 shadow-xl shadow-black/15 sm:p-8">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+    <div className="space-y-8">
+      <section className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(108,92,231,0.18),transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-6 shadow-2xl shadow-black/30 backdrop-blur sm:p-8 lg:p-10">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,transparent,rgba(108,92,231,0.05),transparent)]" />
+
+        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#6c5ce7]/30 bg-[#6c5ce7]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-[#9d8dff]">
               <Shield className="h-4 w-4" />
-              Release Bearbeiten
+              Edit Release
             </div>
 
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+              <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
                 {release.title}
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-zinc-400 sm:text-base">
-                Bearbeite Titel, Version und Status. Bild und Release-Datei
-                kannst du direkt vom Computer neu auswählen.
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/70 sm:text-base">
+                Update the title, version, slug, status, and description. You can
+                also replace the current image and release file directly from your
+                computer.
               </p>
             </div>
           </div>
@@ -473,38 +476,38 @@ export default async function EditReleasePage({
           <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/dashboard/releases"
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-[#6c5ce7]/40 hover:text-white"
             >
               <ArrowLeft className="h-4 w-4" />
-              <span>Zurück zu Releases</span>
+              <span>Back to Releases</span>
             </Link>
 
             <Link
               href={publicHref}
-              className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110"
             >
               <ExternalLink className="h-4 w-4" />
-              <span>Öffentlich ansehen</span>
+              <span>View Public Page</span>
             </Link>
           </div>
         </div>
       </section>
 
       {errorMessage ? (
-        <div className="flex items-start gap-3 rounded-3xl border border-red-500/20 bg-red-500/10 p-4 text-red-100">
+        <div className="flex items-start gap-3 rounded-[28px] border border-red-500/20 bg-red-500/10 p-4 text-red-100">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-300" />
           <div>
-            <div className="font-semibold">Speichern fehlgeschlagen</div>
+            <div className="font-semibold">Save failed</div>
             <p className="mt-1 text-sm text-red-100/90">{errorMessage}</p>
           </div>
         </div>
       ) : null}
 
       {successMessage ? (
-        <div className="flex items-start gap-3 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-100">
+        <div className="flex items-start gap-3 rounded-[28px] border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-100">
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
           <div>
-            <div className="font-semibold">Erfolgreich gespeichert</div>
+            <div className="font-semibold">Saved successfully</div>
             <p className="mt-1 text-sm text-emerald-100/90">
               {successMessage}
             </p>
@@ -513,8 +516,8 @@ export default async function EditReleasePage({
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6 shadow-xl shadow-black/10 backdrop-blur">
+          <div className="text-xs uppercase tracking-[0.16em] text-white/45">
             Status
           </div>
           <div className="mt-3">
@@ -526,61 +529,61 @@ export default async function EditReleasePage({
               {getStatusLabel(release.status)}
             </span>
           </div>
-          <div className="mt-3 text-sm text-zinc-400">
-            Aktueller Veröffentlichungsstatus
+          <div className="mt-3 text-sm text-white/60">
+            Current publication status
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6 shadow-xl shadow-black/10 backdrop-blur">
+          <div className="text-xs uppercase tracking-[0.16em] text-white/45">
             Downloads
           </div>
           <div className="mt-2 text-2xl font-semibold text-white">
             {release._count.downloads}
           </div>
-          <div className="mt-2 text-sm text-zinc-400">
-            Gesamtzahl der Downloads
+          <div className="mt-2 text-sm text-white/60">
+            Total number of downloads
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-            Kommentare
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6 shadow-xl shadow-black/10 backdrop-blur">
+          <div className="text-xs uppercase tracking-[0.16em] text-white/45">
+            Comments
           </div>
           <div className="mt-2 text-2xl font-semibold text-white">
             {release._count.comments}
           </div>
-          <div className="mt-2 text-sm text-zinc-400">
-            Community-Aktivität zum Release
+          <div className="mt-2 text-sm text-white/60">
+            Community activity for this release
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
-          <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-            Aktualisiert
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6 shadow-xl shadow-black/10 backdrop-blur">
+          <div className="text-xs uppercase tracking-[0.16em] text-white/45">
+            Updated
           </div>
           <div className="mt-2 text-lg font-semibold text-white">
             {formatDateTime(release.updatedAt)}
           </div>
-          <div className="mt-2 text-sm text-zinc-400">Letzte Änderung</div>
+          <div className="mt-2 text-sm text-white/60">Latest update</div>
         </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <form
           action={updateReleaseAction}
-          className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8"
+          className="rounded-[32px] border border-white/10 bg-white/[0.03] p-6 shadow-2xl shadow-black/20 backdrop-blur sm:p-8"
         >
           <input type="hidden" name="releaseId" value={release.id} />
 
           <div className="mb-6 flex items-center gap-3">
             <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-              <FileText className="h-5 w-5 text-cyan-300" />
+              <FileText className="h-5 w-5 text-[#9d8dff]" />
             </div>
             <div>
-              <div className="text-sm font-medium text-zinc-500">Formular</div>
+              <div className="text-sm font-medium text-white/45">Form</div>
               <h2 className="text-2xl font-semibold text-white">
-                Release-Daten bearbeiten
+                Edit Release Details
               </h2>
             </div>
           </div>
@@ -590,24 +593,24 @@ export default async function EditReleasePage({
               <div>
                 <label
                   htmlFor="title"
-                  className="mb-2 block text-sm font-medium text-zinc-300"
+                  className="mb-2 block text-sm font-medium text-white/75"
                 >
-                  Titel
+                  Title
                 </label>
                 <input
                   id="title"
                   name="title"
                   defaultValue={release.title}
                   required
-                  placeholder="z. B. ArcadiaX"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
+                  placeholder="e.g. ArcadiaX"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="version"
-                  className="mb-2 block text-sm font-medium text-zinc-300"
+                  className="mb-2 block text-sm font-medium text-white/75"
                 >
                   Version
                 </label>
@@ -616,8 +619,8 @@ export default async function EditReleasePage({
                   name="version"
                   defaultValue={release.version}
                   required
-                  placeholder="z. B. 1.0.0"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
+                  placeholder="e.g. 1.0.0"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
                 />
               </div>
             </div>
@@ -626,7 +629,7 @@ export default async function EditReleasePage({
               <div>
                 <label
                   htmlFor="slug"
-                  className="mb-2 block text-sm font-medium text-zinc-300"
+                  className="mb-2 block text-sm font-medium text-white/75"
                 >
                   Slug
                 </label>
@@ -634,18 +637,18 @@ export default async function EditReleasePage({
                   id="slug"
                   name="slug"
                   defaultValue={release.slug ?? ""}
-                  placeholder="z. B. arcadiax"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
+                  placeholder="e.g. arcadiax"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
                 />
-                <p className="mt-2 text-xs text-zinc-500">
-                  Optional. Wird für die öffentliche URL verwendet.
+                <p className="mt-2 text-xs text-white/45">
+                  Optional. Used for the public URL.
                 </p>
               </div>
 
               <div>
                 <label
                   htmlFor="status"
-                  className="mb-2 block text-sm font-medium text-zinc-300"
+                  className="mb-2 block text-sm font-medium text-white/75"
                 >
                   Status
                 </label>
@@ -653,7 +656,7 @@ export default async function EditReleasePage({
                   id="status"
                   name="status"
                   defaultValue={release.status}
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/30 focus:bg-zinc-900"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
                 >
                   <option value="DRAFT">DRAFT</option>
                   <option value="PUBLISHED">PUBLISHED</option>
@@ -664,17 +667,17 @@ export default async function EditReleasePage({
             <div>
               <label
                 htmlFor="description"
-                className="mb-2 block text-sm font-medium text-zinc-300"
+                className="mb-2 block text-sm font-medium text-white/75"
               >
-                Beschreibung
+                Description
               </label>
               <textarea
                 id="description"
                 name="description"
                 defaultValue={release.description ?? ""}
                 rows={7}
-                placeholder="Beschreibe das Release, Funktionen, Änderungen oder Hinweise..."
-                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
+                placeholder="Describe the release, features, changes, or important notes..."
+                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
               />
             </div>
 
@@ -682,41 +685,39 @@ export default async function EditReleasePage({
               <div>
                 <label
                   htmlFor="imageFile"
-                  className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300"
+                  className="mb-2 flex items-center gap-2 text-sm font-medium text-white/75"
                 >
-                  <ImageIcon className="h-4 w-4 text-cyan-300" />
-                  Neues Bild vom Computer
+                  <ImageIcon className="h-4 w-4 text-[#9d8dff]" />
+                  Upload New Image
                 </label>
                 <input
                   id="imageFile"
                   name="imageFile"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-cyan-400/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
                 />
-                <p className="mt-2 text-xs text-zinc-500">
-                  Optional. Wenn du nichts auswählst, bleibt das aktuelle Bild
-                  erhalten.
+                <p className="mt-2 text-xs text-white/45">
+                  Optional. If you do not select a file, the current image will be kept.
                 </p>
               </div>
 
               <div>
                 <label
                   htmlFor="releaseFile"
-                  className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300"
+                  className="mb-2 flex items-center gap-2 text-sm font-medium text-white/75"
                 >
-                  <Upload className="h-4 w-4 text-cyan-300" />
-                  Neue Release-Datei vom Computer
+                  <Upload className="h-4 w-4 text-[#9d8dff]" />
+                  Upload New Release File
                 </label>
                 <input
                   id="releaseFile"
                   name="releaseFile"
                   type="file"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-cyan-400/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
                 />
-                <p className="mt-2 text-xs text-zinc-500">
-                  Optional. Wenn du nichts auswählst, bleibt die aktuelle
-                  Release-Datei erhalten.
+                <p className="mt-2 text-xs text-white/45">
+                  Optional. If you do not select a file, the current release file will be kept.
                 </p>
               </div>
             </div>
@@ -726,33 +727,31 @@ export default async function EditReleasePage({
 
               <Link
                 href="/dashboard/releases"
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-[#6c5ce7]/40 hover:text-white"
               >
                 <ArrowLeft className="h-4 w-4" />
-                <span>Abbrechen</span>
+                <span>Cancel</span>
               </Link>
             </div>
           </div>
         </form>
 
         <div className="space-y-6">
-          <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
+          <section className="rounded-[32px] border border-white/10 bg-white/[0.03] p-6 shadow-2xl shadow-black/20 backdrop-blur sm:p-8">
             <div className="mb-5 flex items-center gap-3">
               <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                <ImageIcon className="h-5 w-5 text-cyan-300" />
+                <ImageIcon className="h-5 w-5 text-[#9d8dff]" />
               </div>
               <div>
-                <div className="text-sm font-medium text-zinc-500">
-                  Vorschau
-                </div>
+                <div className="text-sm font-medium text-white/45">Preview</div>
                 <h2 className="text-2xl font-semibold text-white">
-                  Aktuelles Bild & Datei
+                  Current Image & File
                 </h2>
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/20">
-              <div className="flex h-[260px] w-full items-center justify-center border-b border-white/10 bg-gradient-to-br from-zinc-950 via-black to-zinc-900">
+            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-black/20">
+              <div className="flex h-[260px] w-full items-center justify-center border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(108,92,231,0.12),transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))]">
                 {release.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -761,35 +760,31 @@ export default async function EditReleasePage({
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="flex flex-col items-center gap-3 text-zinc-500">
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <ImageIcon className="h-8 w-8 text-cyan-300/80" />
+                  <div className="flex flex-col items-center gap-3 text-white/45">
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <ImageIcon className="h-8 w-8 text-[#9d8dff]/80" />
                     </div>
-                    <span className="text-sm">Kein Vorschaubild vorhanden</span>
+                    <span className="text-sm">No preview image available</span>
                   </div>
                 )}
               </div>
 
               <div className="space-y-3 p-5">
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-                    Aktuelles Bild
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">
+                    Current Image
                   </div>
-                  <div className="mt-2 text-sm text-zinc-300">
-                    {release.imageUrl
-                      ? "Bild vorhanden"
-                      : "Kein Bild gespeichert"}
+                  <div className="mt-2 text-sm text-white/75">
+                    {release.imageUrl ? "Image available" : "No image saved"}
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                  <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-                    Aktuelle Datei
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.16em] text-white/45">
+                    Current File
                   </div>
-                  <div className="mt-2 text-sm text-zinc-300">
-                    {release.fileUrl
-                      ? "Datei vorhanden"
-                      : "Keine Datei gespeichert"}
+                  <div className="mt-2 text-sm text-white/75">
+                    {release.fileUrl ? "File available" : "No file saved"}
                   </div>
                 </div>
 
@@ -798,23 +793,23 @@ export default async function EditReleasePage({
                     href={release.fileUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold text-white/80 transition hover:border-[#6c5ce7]/40 hover:text-white"
                   >
                     <Upload className="h-4 w-4" />
-                    <span>Aktuelle Datei öffnen</span>
+                    <span>Open Current File</span>
                   </Link>
                 ) : null}
               </div>
             </div>
           </section>
 
-          <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
-            <div className="text-sm font-medium text-zinc-500">Metadaten</div>
+          <section className="rounded-[32px] border border-white/10 bg-white/[0.03] p-6 shadow-2xl shadow-black/20 backdrop-blur sm:p-8">
+            <div className="text-sm font-medium text-white/45">Metadata</div>
 
             <div className="mt-4 space-y-4">
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-                  Erstellt
+                <div className="text-xs uppercase tracking-[0.16em] text-white/45">
+                  Created
                 </div>
                 <div className="mt-2 text-sm font-semibold text-white">
                   {formatDateTime(release.createdAt)}
@@ -822,8 +817,8 @@ export default async function EditReleasePage({
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-                  Letzte Aktualisierung
+                <div className="text-xs uppercase tracking-[0.16em] text-white/45">
+                  Last Updated
                 </div>
                 <div className="mt-2 text-sm font-semibold text-white">
                   {formatDateTime(release.updatedAt)}
@@ -831,8 +826,8 @@ export default async function EditReleasePage({
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-                <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-                  Öffentliche URL
+                <div className="text-xs uppercase tracking-[0.16em] text-white/45">
+                  Public URL
                 </div>
                 <div className="mt-2 break-all text-sm font-semibold text-white">
                   {publicHref}

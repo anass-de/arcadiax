@@ -10,8 +10,8 @@ type SubmitButtonProps = {
 };
 
 export default function SubmitButton({
-  idleText = "Änderungen speichern",
-  pendingText = "Speichert...",
+  idleText = "Save Changes",
+  pendingText = "Saving...",
   className = "",
 }: SubmitButtonProps) {
   const { pending } = useFormStatus();
@@ -22,8 +22,8 @@ export default function SubmitButton({
       disabled={pending}
       aria-disabled={pending}
       className={[
-        "inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition",
-        "hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-cyan-400/40 focus:ring-offset-2 focus:ring-offset-zinc-950",
+        "inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-5 py-3 text-sm font-semibold text-white transition",
+        "hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-[#6c5ce7]/40 focus:ring-offset-2 focus:ring-offset-[#0b0f17]",
         "disabled:cursor-not-allowed disabled:opacity-60",
         className,
       ].join(" ")}
