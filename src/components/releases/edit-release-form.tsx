@@ -70,22 +70,22 @@ function formatBytes(bytes: number) {
 async function uploadFileWithProgress(args: {
   file: File;
   slug: string;
-  title: string;
   kind: UploadKind;
   onProgress: (progress: number) => void;
 }) {
-  const prepareResponse = await fetch("/api/admin/uploads/r2", {
+  const fileType = args.file.type?.trim() || "application/octet-stream";
+  const folder = args.kind === "image" ? "media" : "releases";
+
+  const prepareResponse = await fetch("/api/admin/uploads/presign", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       fileName: args.file.name,
-      contentType: args.file.type,
-      size: args.file.size,
+      fileType,
+      folder,
       slug: args.slug,
-      title: args.title,
-      kind: args.kind,
     }),
   });
 
@@ -94,11 +94,11 @@ async function uploadFileWithProgress(args: {
         error?: string;
         uploadUrl?: string;
         publicUrl?: string;
-        headers?: Record<string, string>;
+        key?: string;
       }
     | null;
 
-  if (!prepareResponse.ok || !prepareData?.uploadUrl || !prepareData.publicUrl) {
+  if (!prepareResponse.ok || !prepareData?.uploadUrl || !prepareData?.publicUrl) {
     throw new Error(
       prepareData?.error || "Upload konnte nicht vorbereitet werden."
     );
@@ -106,15 +106,11 @@ async function uploadFileWithProgress(args: {
 
   const uploadUrl = prepareData.uploadUrl;
   const publicUrl = prepareData.publicUrl;
-  const headers = prepareData.headers ?? {};
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", uploadUrl, true);
-
-    Object.entries(headers).forEach(([key, value]) => {
-      xhr.setRequestHeader(key, value);
-    });
+    xhr.setRequestHeader("Content-Type", fileType);
 
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;
@@ -230,7 +226,6 @@ export default function EditReleaseForm({ release }: Props) {
         file: args.file,
         kind: args.kind,
         slug: effectiveSlug,
-        title: title.trim(),
         onProgress(progress) {
           setState((prev) => ({
             ...prev,
@@ -284,7 +279,6 @@ export default function EditReleaseForm({ release }: Props) {
 
     const cleanTitle = title.trim();
     const cleanVersion = version.trim();
-    const cleanSlug = slug.trim();
 
     if (!cleanTitle) {
       setFormError("Titel darf nicht leer sein.");
@@ -321,7 +315,7 @@ export default function EditReleaseForm({ release }: Props) {
         body: JSON.stringify({
           title: cleanTitle,
           version: cleanVersion,
-          slug: cleanSlug,
+          slug: effectiveSlug,
           description: description.trim() || null,
           changelog: changelog.trim() || null,
           status,
@@ -337,12 +331,14 @@ export default function EditReleaseForm({ release }: Props) {
         | null;
 
       if (!response.ok) {
-        throw new Error(data?.error || "Änderungen konnten nicht gespeichert werden.");
+        throw new Error(
+          data?.error || "Änderungen konnten nicht gespeichert werden."
+        );
       }
 
       router.push(
         `/dashboard/releases/${release.id}/edit?success=${encodeURIComponent(
-          "Your changes have been saved successfully."
+          "Änderungen wurden erfolgreich gespeichert."
         )}`
       );
       router.refresh();
@@ -369,7 +365,7 @@ export default function EditReleaseForm({ release }: Props) {
             htmlFor="title"
             className="mb-2 block text-sm font-medium text-white/75"
           >
-            Title
+            Titel
           </label>
           <input
             id="title"
@@ -377,7 +373,7 @@ export default function EditReleaseForm({ release }: Props) {
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             required
-            placeholder="e.g. ArcadiaX"
+            placeholder="z. B. ArcadiaX"
             disabled={anyBusy}
             className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
           />
@@ -396,7 +392,7 @@ export default function EditReleaseForm({ release }: Props) {
             value={version}
             onChange={(event) => setVersion(event.target.value)}
             required
-            placeholder="e.g. 1.0.0"
+            placeholder="z. B. 1.0.0"
             disabled={anyBusy}
             className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
           />
@@ -416,15 +412,15 @@ export default function EditReleaseForm({ release }: Props) {
             name="slug"
             value={slug}
             onChange={(event) => setSlug(event.target.value)}
-            placeholder="e.g. arcadiax"
+            placeholder="z. B. arcadiax"
             disabled={anyBusy}
             className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
           />
           <p className="mt-2 text-xs text-white/45">
-            Optional. Used for the public URL.
+            Optional. Wird für die öffentliche URL verwendet.
           </p>
           <p className="mt-1 text-xs text-[#9d8dff]/80">
-            Current slug: <span className="font-medium">{effectiveSlug}</span>
+            Aktueller Slug: <span className="font-medium">{effectiveSlug}</span>
           </p>
         </div>
 
@@ -456,7 +452,7 @@ export default function EditReleaseForm({ release }: Props) {
           htmlFor="description"
           className="mb-2 block text-sm font-medium text-white/75"
         >
-          Description
+          Beschreibung
         </label>
         <textarea
           id="description"
@@ -464,7 +460,7 @@ export default function EditReleaseForm({ release }: Props) {
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           rows={7}
-          placeholder="Describe the release, features, changes, or important notes..."
+          placeholder="Beschreibe das Release, Funktionen, Änderungen oder wichtige Hinweise..."
           disabled={anyBusy}
           className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
         />
@@ -483,7 +479,7 @@ export default function EditReleaseForm({ release }: Props) {
           value={changelog}
           onChange={(event) => setChangelog(event.target.value)}
           rows={6}
-          placeholder="What changed?"
+          placeholder="Was hat sich geändert?"
           disabled={anyBusy}
           className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
         />
@@ -496,18 +492,18 @@ export default function EditReleaseForm({ release }: Props) {
             className="mb-2 flex items-center gap-2 text-sm font-medium text-white/75"
           >
             <ImageIcon className="h-4 w-4 text-[#9d8dff]" />
-            Upload New Image
+            Neues Bild hochladen
           </label>
           <input
             id="imageFile"
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/svg+xml"
+            accept="image/jpeg,image/png,image/webp,image/gif"
             onChange={handleImageFileChange}
             disabled={anyBusy}
             className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
           />
           <p className="mt-2 text-xs text-white/45">
-            Optional. If you do not select a file, the current image will be kept.
+            Optional. Wenn du keine Datei auswählst, bleibt das aktuelle Bild erhalten.
           </p>
 
           {imageFile ? (
@@ -520,7 +516,7 @@ export default function EditReleaseForm({ release }: Props) {
           {imageUpload.isUploading ? (
             <div className="mt-3">
               <div className="mb-2 flex items-center justify-between text-xs text-white/60">
-                <span>Image upload in progress...</span>
+                <span>Bild-Upload läuft...</span>
                 <span>{imageUpload.progress}%</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-white/10">
@@ -534,7 +530,7 @@ export default function EditReleaseForm({ release }: Props) {
 
           {imageUpload.uploadedUrl ? (
             <p className="mt-2 text-xs text-emerald-300">
-              Image uploaded successfully.
+              Bild erfolgreich hochgeladen.
             </p>
           ) : null}
 
@@ -549,7 +545,7 @@ export default function EditReleaseForm({ release }: Props) {
             className="mb-2 flex items-center gap-2 text-sm font-medium text-white/75"
           >
             <Upload className="h-4 w-4 text-[#9d8dff]" />
-            Upload New Release File
+            Neue Release-Datei hochladen
           </label>
           <input
             id="releaseFile"
@@ -559,7 +555,7 @@ export default function EditReleaseForm({ release }: Props) {
             className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
           />
           <p className="mt-2 text-xs text-white/45">
-            Optional. If you do not select a file, the current release file will be kept.
+            Optional. Wenn du keine Datei auswählst, bleibt die aktuelle Release-Datei erhalten.
           </p>
 
           {releaseFile ? (
@@ -574,7 +570,7 @@ export default function EditReleaseForm({ release }: Props) {
           {releaseUpload.isUploading ? (
             <div className="mt-3">
               <div className="mb-2 flex items-center justify-between text-xs text-white/60">
-                <span>Release file upload in progress...</span>
+                <span>Release-Datei-Upload läuft...</span>
                 <span>{releaseUpload.progress}%</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-white/10">
@@ -588,7 +584,7 @@ export default function EditReleaseForm({ release }: Props) {
 
           {releaseUpload.uploadedUrl ? (
             <p className="mt-2 text-xs text-emerald-300">
-              Release file uploaded successfully.
+              Release-Datei erfolgreich hochgeladen.
             </p>
           ) : null}
 
@@ -611,7 +607,7 @@ export default function EditReleaseForm({ release }: Props) {
           className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Save className="h-4 w-4" />
-          <span>{isSubmitting ? "Saving..." : "Save Changes"}</span>
+          <span>{isSubmitting ? "Speichern..." : "Änderungen speichern"}</span>
         </button>
 
         <Link
@@ -619,7 +615,7 @@ export default function EditReleaseForm({ release }: Props) {
           className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-[#6c5ce7]/40 hover:text-white"
         >
           <ArrowLeft className="h-4 w-4" />
-          <span>Cancel</span>
+          <span>Abbrechen</span>
         </Link>
       </div>
     </form>

@@ -54,22 +54,22 @@ function formatBytes(bytes: number) {
 async function uploadFileWithProgress(args: {
   file: File;
   slug: string;
-  title: string;
   kind: UploadKind;
   onProgress: (progress: number) => void;
 }) {
-  const prepareResponse = await fetch("/api/admin/uploads/r2", {
+  const fileType = args.file.type?.trim() || "application/octet-stream";
+  const folder = args.kind === "image" ? "media" : "releases";
+
+  const prepareResponse = await fetch("/api/admin/uploads/presign", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       fileName: args.file.name,
-      contentType: args.file.type,
-      size: args.file.size,
+      fileType,
+      folder,
       slug: args.slug,
-      title: args.title,
-      kind: args.kind,
     }),
   });
 
@@ -78,7 +78,7 @@ async function uploadFileWithProgress(args: {
         error?: string;
         uploadUrl?: string;
         publicUrl?: string;
-        headers?: Record<string, string>;
+        key?: string;
       }
     | null;
 
@@ -90,15 +90,11 @@ async function uploadFileWithProgress(args: {
 
   const uploadUrl = prepareData.uploadUrl;
   const publicUrl = prepareData.publicUrl;
-  const headers = prepareData.headers ?? {};
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", uploadUrl, true);
-
-    Object.entries(headers).forEach(([key, value]) => {
-      xhr.setRequestHeader(key, value);
-    });
+    xhr.setRequestHeader("Content-Type", fileType);
 
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;
@@ -218,7 +214,6 @@ export default function NewReleaseForm() {
         file: args.file,
         kind: args.kind,
         slug: effectiveSlug,
-        title: title.trim(),
         onProgress(progress) {
           setState((prev) => ({
             ...prev,
@@ -266,7 +261,6 @@ export default function NewReleaseForm() {
 
     const cleanTitle = title.trim();
     const cleanVersion = version.trim();
-    const cleanSlug = slug.trim();
 
     if (!cleanTitle) {
       setFormError("Titel darf nicht leer sein.");
@@ -301,34 +295,30 @@ export default function NewReleaseForm() {
         headers: {
           "Content-Type": "application/json",
         },
-        redirect: "follow",
         body: JSON.stringify({
           title: cleanTitle,
           version: cleanVersion,
-          slug: cleanSlug,
+          slug: effectiveSlug,
           description: description.trim() || null,
           changelog: changelog.trim() || null,
           status,
           fileUrl,
           fileName: releaseFile.name,
           fileSize: releaseFile.size,
-          mimeType: releaseFile.type || null,
+          mimeType: releaseFile.type || "application/octet-stream",
           imageUrl,
         }),
       });
 
-      if (response.redirected && response.url) {
-        router.push(response.url);
-        router.refresh();
-        return;
-      }
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        throw new Error(text || "Release konnte nicht erstellt werden.");
+        throw new Error(data?.error || "Release konnte nicht erstellt werden.");
       }
 
-      router.push("/dashboard/releases?success=Release wurde erfolgreich erstellt.");
+      router.push(
+        "/dashboard/releases/new?success=Release wurde erfolgreich erstellt."
+      );
       router.refresh();
     } catch (error) {
       setFormError(
@@ -360,7 +350,7 @@ export default function NewReleaseForm() {
             placeholder="z. B. ArcadiaX"
             required
             disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
 
@@ -376,7 +366,7 @@ export default function NewReleaseForm() {
             placeholder="z. B. 1.0.0"
             required
             disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
       </div>
@@ -393,12 +383,12 @@ export default function NewReleaseForm() {
             onChange={(event) => setSlug(event.target.value)}
             placeholder="z. B. arcadiax"
             disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
           />
           <p className="mt-2 text-xs text-zinc-500">
             Optional. Wenn leer, wird der Slug automatisch aus dem Titel erzeugt.
           </p>
-          <p className="mt-1 text-xs text-cyan-300/80">
+          <p className="mt-1 text-xs text-[#8f84ff]">
             Aktueller Slug: <span className="font-medium">{effectiveSlug}</span>
           </p>
         </div>
@@ -414,7 +404,7 @@ export default function NewReleaseForm() {
               setStatus(event.target.value as "DRAFT" | "PUBLISHED")
             }
             disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition focus:border-cyan-400/30 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <option value="DRAFT">DRAFT</option>
             <option value="PUBLISHED">PUBLISHED</option>
@@ -433,7 +423,7 @@ export default function NewReleaseForm() {
           onChange={(event) => setDescription(event.target.value)}
           placeholder="Beschreibe das Release, Funktionen, Änderungen oder Hinweise..."
           disabled={anyBusy}
-          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
         />
       </div>
 
@@ -448,14 +438,14 @@ export default function NewReleaseForm() {
           onChange={(event) => setChangelog(event.target.value)}
           placeholder="Was hat sich geändert?"
           disabled={anyBusy}
-          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
         />
       </div>
 
       <div className="grid gap-5 md:grid-cols-2">
         <div>
           <label className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300">
-            <ImageIcon className="h-4 w-4 text-cyan-300" />
+            <ImageIcon className="h-4 w-4 text-[#8f84ff]" />
             Vorschaubild hochladen
           </label>
           <input
@@ -463,7 +453,7 @@ export default function NewReleaseForm() {
             accept="image/*"
             onChange={handleImageFileChange}
             disabled={anyBusy}
-            className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-cyan-400/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
           />
           <p className="mt-2 text-xs text-zinc-500">
             Optional. Bild für Karten, Listen und Vorschau.
@@ -484,7 +474,7 @@ export default function NewReleaseForm() {
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-white/10">
                 <div
-                  className="h-full rounded-full bg-cyan-400 transition-all"
+                  className="h-full rounded-full bg-[#6c5ce7] transition-all"
                   style={{ width: `${imageUpload.progress}%` }}
                 />
               </div>
@@ -504,7 +494,7 @@ export default function NewReleaseForm() {
 
         <div>
           <label className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300">
-            <Upload className="h-4 w-4 text-cyan-300" />
+            <Upload className="h-4 w-4 text-[#8f84ff]" />
             Release-Datei hochladen
           </label>
           <input
@@ -512,7 +502,7 @@ export default function NewReleaseForm() {
             onChange={handleReleaseFileChange}
             required
             disabled={anyBusy}
-            className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-cyan-400/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
           />
           <p className="mt-2 text-xs text-zinc-500">
             Pflichtfeld. Das ist die eigentliche Release-Datei zum Download.
@@ -535,7 +525,7 @@ export default function NewReleaseForm() {
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-white/10">
                 <div
-                  className="h-full rounded-full bg-cyan-400 transition-all"
+                  className="h-full rounded-full bg-[#6c5ce7] transition-all"
                   style={{ width: `${releaseUpload.progress}%` }}
                 />
               </div>
@@ -564,7 +554,7 @@ export default function NewReleaseForm() {
         <button
           type="submit"
           disabled={anyBusy}
-          className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Plus className="h-4 w-4" />
           <span>
