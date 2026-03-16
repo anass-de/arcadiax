@@ -8,6 +8,7 @@ import Providers from "@/app/providers";
 import { authOptions } from "@/lib/auth";
 import SiteNavbar from "@/components/layout/site-navbar";
 import SiteFooter from "@/components/layout/site-footer";
+import AdBanner from "@/components/ads/ad-banner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -96,7 +97,7 @@ export default async function RootLayout({
       <body
         className={`${inter.variable} min-h-screen bg-[#05070b] font-sans text-white antialiased`}
       >
-        {hasAdsense ? (
+        {hasAdsense && (
           <Script
             id="google-adsense"
             strategy="beforeInteractive"
@@ -104,16 +105,24 @@ export default async function RootLayout({
             src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClient}`}
             crossOrigin="anonymous"
           />
-        ) : null}
+        )}
 
         <Providers>
           <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-[#05070b] text-white">
-            <div className="pointer-events-none absolute inset-0 -z-10">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_30%),radial-gradient(circle_at_80%_20%,_rgba(255,255,255,0.04),_transparent_20%),linear-gradient(to_bottom,_#06080d,_#05070b)]" />
-              <div className="absolute inset-x-0 top-0 h-px bg-white/10" />
-            </div>
 
             <SiteNavbar user={user} />
+
+            {/* GLOBAL AD BANNER */}
+            {hasAdsense && (
+              <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8">
+                <AdBanner
+                  adSlot="1234567890"
+                  className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-3"
+                  adFormat="horizontal"
+                  fullWidthResponsive
+                />
+              </div>
+            )}
 
             <main className="relative z-10 flex-1">
               <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -122,6 +131,7 @@ export default async function RootLayout({
             </main>
 
             <SiteFooter user={user} />
+
           </div>
         </Providers>
       </body>
