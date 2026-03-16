@@ -20,6 +20,7 @@ const ALLOWED_IMAGE_TYPES = [
 const ALLOWED_FILE_TYPES = [
   "application/zip",
   "application/x-zip-compressed",
+  "application/x-zip",
   "application/octet-stream",
   "application/pdf",
 ];
@@ -55,7 +56,22 @@ export async function POST(request: Request) {
     const fileType = String(body?.fileType ?? "").trim();
     const folder = String(body?.folder ?? "uploads").trim();
     const slug = String(body?.slug ?? "general").trim();
-    const fileSize = Number(body?.fileSize ?? 0);
+
+    const rawFileSize = body?.fileSize;
+    const fileSize =
+      typeof rawFileSize === "number"
+        ? rawFileSize
+        : Number.parseInt(String(rawFileSize ?? ""), 10);
+
+    console.log("UPLOAD PRESIGN DEBUG", {
+      fileName,
+      fileType,
+      folder,
+      slug,
+      rawFileSize,
+      parsedFileSize: fileSize,
+      maxSize: MAX_SINGLE_UPLOAD_SIZE,
+    });
 
     if (!fileName || !fileType) {
       return NextResponse.json(
@@ -72,6 +88,11 @@ export async function POST(request: Request) {
     }
 
     if (!Number.isFinite(fileSize) || fileSize <= 0) {
+      console.log("INVALID FILE SIZE", {
+        rawFileSize,
+        parsedFileSize: fileSize,
+      });
+
       return NextResponse.json(
         { error: "Ungültige Dateigröße." },
         { status: 400 }
