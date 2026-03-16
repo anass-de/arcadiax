@@ -1,4 +1,16 @@
 import Link from "next/link";
+import {
+  Boxes,
+  Users,
+  ImageIcon,
+  Film,
+  LayoutDashboard,
+  FolderOpen,
+  MessageSquare,
+  User,
+  LogIn,
+  UserPlus,
+} from "lucide-react";
 
 type FooterUser = {
   name?: string | null;
@@ -13,6 +25,40 @@ type SiteFooterProps = {
 function getDisplayName(user?: FooterUser | null) {
   if (!user) return "";
   return user.name?.trim() || user.email?.split("@")[0] || "User";
+}
+
+function FooterLink({
+  href,
+  icon: Icon,
+  children,
+  highlighted = false,
+}: {
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+  highlighted?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={[
+        "group inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition",
+        highlighted
+          ? "border-[#6c5ce7]/30 bg-[#6c5ce7]/10 text-white hover:border-[#6c5ce7]/50 hover:bg-[#6c5ce7]/15"
+          : "border-white/10 bg-white/[0.03] text-white/70 hover:border-white/20 hover:bg-white/[0.05] hover:text-white",
+      ].join(" ")}
+    >
+      <Icon
+        className={[
+          "h-4 w-4 transition",
+          highlighted
+            ? "text-[#8b7cf6]"
+            : "text-white/45 group-hover:text-[#8b7cf6]",
+        ].join(" ")}
+      />
+      <span>{children}</span>
+    </Link>
+  );
 }
 
 export default function SiteFooter({ user }: SiteFooterProps) {
@@ -30,14 +76,14 @@ export default function SiteFooter({ user }: SiteFooterProps) {
               <div className="text-xl font-semibold tracking-tight text-white">
                 ArcadiaX
               </div>
-              <div className="mt-1 text-[11px] uppercase tracking-[0.28em] text-white/40">
+              <div className="mt-1 text-[11px] uppercase tracking-[0.28em] text-[#8b7cf6]/70">
                 {isAdmin ? "Admin Console" : "Release Platform"}
               </div>
             </div>
 
             <p className="max-w-md text-sm leading-6 text-white/60">
               Verwalte Releases, Medien und Community-Inhalte in einer modernen
-              Plattform mit dunklem, klar strukturiertem Interface.
+              Plattform mit dunklem, elegantem Interface im ArcadiaX-Stil.
             </p>
           </div>
 
@@ -47,72 +93,64 @@ export default function SiteFooter({ user }: SiteFooterProps) {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Link
-                href="/releases"
-                className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
-              >
+              <FooterLink href="/releases" icon={Boxes}>
                 Releases
-              </Link>
+              </FooterLink>
 
-              <Link
-                href="/community"
-                className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
-              >
+              <FooterLink href="/community" icon={Users}>
                 Community
-              </Link>
+              </FooterLink>
+
+              <FooterLink href="/photos" icon={ImageIcon}>
+                Fotos
+              </FooterLink>
+
+              <FooterLink href="/videos" icon={Film}>
+                Videos
+              </FooterLink>
 
               {isLoggedIn && !isAdmin && (
-                <Link
-                  href="/profile"
-                  className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
-                >
+                <FooterLink href="/profile" icon={User}>
                   Profil
-                </Link>
+                </FooterLink>
               )}
 
               {isAdmin && (
                 <>
-                  <Link
+                  <FooterLink
                     href="/dashboard"
-                    className="rounded-xl border border-blue-500/25 bg-blue-500/10 px-3 py-2 text-sm text-white transition hover:border-blue-400/35 hover:bg-blue-500/15"
+                    icon={LayoutDashboard}
+                    highlighted
                   >
                     Dashboard
-                  </Link>
-                  <Link
-                    href="/dashboard/media"
-                    className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
-                  >
+                  </FooterLink>
+
+                  <FooterLink href="/dashboard/media" icon={FolderOpen}>
                     Media
-                  </Link>
-                  <Link
+                  </FooterLink>
+
+                  <FooterLink
                     href="/dashboard/comments"
-                    className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+                    icon={MessageSquare}
                   >
                     Kommentare
-                  </Link>
-                  <Link
-                    href="/dashboard/users"
-                    className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
-                  >
+                  </FooterLink>
+
+                  <FooterLink href="/dashboard/users" icon={Users}>
                     Benutzer
-                  </Link>
+                  </FooterLink>
                 </>
               )}
 
               {!isLoggedIn && (
                 <>
-                  <Link
-                    href="/login"
-                    className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
-                  >
+                  <FooterLink href="/login" icon={LogIn}>
                     Login
-                  </Link>
-                  <Link
-                    href="/register"
-                    className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/70 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
-                  >
+                  </FooterLink>
+
+                  <FooterLink href="/register" icon={UserPlus}>
                     Register
-                  </Link>
+                  </FooterLink>
                 </>
               )}
             </div>
@@ -146,7 +184,7 @@ export default function SiteFooter({ user }: SiteFooterProps) {
                   ArcadiaX
                 </div>
                 <div className="mt-1 text-xs text-white/45">
-                  Releases, Verwaltung und Community
+                  Releases, Medien, Verwaltung und Community
                 </div>
               </div>
             </div>
@@ -156,7 +194,7 @@ export default function SiteFooter({ user }: SiteFooterProps) {
         <div className="mt-4 flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.02] px-5 py-4 text-sm text-white/45 sm:flex-row sm:items-center sm:justify-between">
           <div>© {year} ArcadiaX. Alle Rechte vorbehalten.</div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-4">
             <Link href="/" className="transition hover:text-white/80">
               Startseite
             </Link>
@@ -172,10 +210,12 @@ export default function SiteFooter({ user }: SiteFooterProps) {
             >
               Community
             </Link>
-            <span className="text-white/20">•</span>
-            <span className="text-white/35">
-              Built with Next.js, Prisma & Supabase
-            </span>
+            <Link href="/photos" className="transition hover:text-white/80">
+              Fotos
+            </Link>
+            <Link href="/videos" className="transition hover:text-white/80">
+              Videos
+            </Link>
           </div>
         </div>
       </div>

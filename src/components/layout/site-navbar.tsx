@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
 import {
+  ChevronDown,
   Film,
   House,
   ImageIcon,
@@ -51,14 +53,82 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function NavItem({
+  href,
+  label,
+  icon: Icon,
+  pathname,
+}: {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  pathname: string;
+}) {
+  const active = isActive(pathname, href);
+
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={[
+        "group inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition",
+        active
+          ? "border text-white shadow-[0_0_0_1px_rgba(108,92,231,0.12),0_10px_30px_rgba(0,0,0,0.25)]"
+          : "border border-transparent text-zinc-300 hover:border-white/10 hover:bg-white/[0.06] hover:text-white",
+      ].join(" ")}
+      style={
+        active
+          ? {
+              borderColor: "rgba(108,92,231,0.22)",
+              backgroundColor: "rgba(108,92,231,0.12)",
+            }
+          : undefined
+      }
+    >
+      <Icon
+        className="h-4 w-4 transition"
+        style={{ color: active ? BRAND : "#71717a" }}
+      />
+      <span>{label}</span>
+    </Link>
+  );
+}
+
 export default function SiteNavbar({ user }: SiteNavbarProps) {
   const pathname = usePathname();
-
   const isLoggedIn = !!user;
   const isAdmin = user?.role === "ADMIN";
 
   const displayName = getDisplayName(user);
   const initials = getInitials(user);
+
+  const [adminOpen, setAdminOpen] = useState(false);
+  const adminMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        adminMenuRef.current &&
+        !adminMenuRef.current.contains(event.target as Node)
+      ) {
+        setAdminOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAdminOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
 
   const guestLinks = [
     { href: "/", label: "Home", icon: House },
@@ -77,19 +147,26 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
     { href: "/profile", label: "Profile", icon: User },
   ];
 
-  const adminLinks = [
+  const adminMainLinks = [
     { href: "/", label: "Home", icon: House },
     { href: "/releases", label: "Releases", icon: Package },
     { href: "/videos", label: "Videos", icon: Film },
     { href: "/photos", label: "Photos", icon: ImageIcon },
     { href: "/community", label: "Community", icon: MessageSquare },
+  ];
+
+  const adminPanelLinks = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/dashboard/media", label: "Media", icon: ImageIcon },
     { href: "/dashboard/comments", label: "Comments", icon: MessageSquare },
     { href: "/dashboard/users", label: "Users", icon: Users },
   ];
 
-  const navLinks = isAdmin ? adminLinks : isLoggedIn ? userLinks : guestLinks;
+  const navLinks = isAdmin ? adminMainLinks : isLoggedIn ? userLinks : guestLinks;
+
+  const adminAreaActive = adminPanelLinks.some((item) =>
+    isActive(pathname, item.href),
+  );
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#05070b]/85 backdrop-blur-xl">
@@ -98,7 +175,6 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
           <Link
             href={isAdmin ? "/dashboard" : "/"}
             className="group flex min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 transition hover:bg-white/[0.06]"
-            style={{ borderColor: "rgba(255,255,255,0.10)" }}
           >
             <div
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border bg-gradient-to-br shadow-[0_0_30px_rgba(108,92,231,0.14)]"
@@ -127,24 +203,31 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
         </div>
 
         <nav className="hidden flex-1 items-center justify-center lg:flex">
-          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            {navLinks.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(pathname, item.href);
+          <div className="flex max-w-full items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            {navLinks.map((item) => (
+              <NavItem
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                pathname={pathname}
+              />
+            ))}
 
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
+            {isAdmin && (
+              <div className="relative ml-1" ref={adminMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setAdminOpen((prev) => !prev)}
+                  aria-expanded={adminOpen}
                   className={[
-                    "group inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition",
-                    active
-                      ? "border text-white shadow-[0_0_0_1px_rgba(108,92,231,0.12),0_10px_30px_rgba(0,0,0,0.25)]"
-                      : "border border-transparent text-zinc-300 hover:border-white/10 hover:bg-white/[0.06] hover:text-white",
+                    "inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition",
+                    adminAreaActive || adminOpen
+                      ? "text-white"
+                      : "border-transparent text-zinc-300 hover:border-white/10 hover:bg-white/[0.06] hover:text-white",
                   ].join(" ")}
                   style={
-                    active
+                    adminAreaActive || adminOpen
                       ? {
                           borderColor: "rgba(108,92,231,0.22)",
                           backgroundColor: "rgba(108,92,231,0.12)",
@@ -152,16 +235,65 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
                       : undefined
                   }
                 >
-                  <Icon
-                    className="h-4 w-4 transition"
+                  <Shield
+                    className="h-4 w-4"
                     style={{
-                      color: active ? BRAND : "#71717a",
+                      color: adminAreaActive || adminOpen ? BRAND : "#71717a",
                     }}
                   />
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
+                  <span>Admin</span>
+                  <ChevronDown
+                    className={`h-4 w-4 transition ${adminOpen ? "rotate-180" : ""}`}
+                    style={{
+                      color: adminAreaActive || adminOpen ? BRAND : "#71717a",
+                    }}
+                  />
+                </button>
+
+                {adminOpen && (
+                  <div className="absolute right-0 top-full z-50 mt-3 w-56 rounded-2xl border border-white/10 bg-[#0a0d14]/95 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+                    <div className="mb-2 px-3 pt-2 text-[11px] uppercase tracking-[0.24em] text-zinc-500">
+                      Admin Area
+                    </div>
+
+                    <div className="space-y-1">
+                      {adminPanelLinks.map((item) => {
+                        const Icon = item.icon;
+                        const active = isActive(pathname, item.href);
+
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => setAdminOpen(false)}
+                            className={[
+                              "flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition",
+                              active
+                                ? "text-white"
+                                : "border-transparent text-zinc-300 hover:border-white/10 hover:bg-white/[0.05] hover:text-white",
+                            ].join(" ")}
+                            style={
+                              active
+                                ? {
+                                    borderColor: "rgba(108,92,231,0.22)",
+                                    backgroundColor: "rgba(108,92,231,0.12)",
+                                  }
+                                : undefined
+                            }
+                          >
+                            <Icon
+                              className="h-4 w-4"
+                              style={{ color: active ? BRAND : "#71717a" }}
+                            />
+                            <span>{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </nav>
 
@@ -252,6 +384,16 @@ export default function SiteNavbar({ user }: SiteNavbarProps) {
               </Link>
             );
           })}
+
+          {isAdmin && (
+            <Link
+              href="/dashboard"
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.06] hover:text-white"
+            >
+              <Shield className="h-4 w-4 text-zinc-400" />
+              <span>Admin</span>
+            </Link>
+          )}
 
           {!isLoggedIn ? (
             <>
