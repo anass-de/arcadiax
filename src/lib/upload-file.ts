@@ -8,11 +8,19 @@ type PresignErrorResponse = {
   error?: string;
 };
 
+const MAX_SINGLE_UPLOAD_SIZE = 500 * 1024 * 1024; // 500 MB
+
 export async function uploadFileToR2(params: {
   file: File;
   folder: "releases" | "media" | "avatars";
   slug: string;
 }) {
+  if (params.file.size > MAX_SINGLE_UPLOAD_SIZE) {
+    throw new Error(
+      "Die Datei ist zu groß für den aktuellen Direkt-Upload. Bitte vorerst maximal 500 MB hochladen."
+    );
+  }
+
   const fileType = params.file.type?.trim() || "application/octet-stream";
 
   const presignResponse = await fetch("/api/admin/uploads/presign", {
@@ -25,6 +33,7 @@ export async function uploadFileToR2(params: {
       fileType,
       folder: params.folder,
       slug: params.slug,
+      fileSize: params.file.size,
     }),
   });
 

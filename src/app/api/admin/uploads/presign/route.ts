@@ -24,6 +24,8 @@ const ALLOWED_FILE_TYPES = [
   "application/pdf",
 ];
 
+const MAX_SINGLE_UPLOAD_SIZE = 500 * 1024 * 1024; // 500 MB
+
 function isValidFolder(folder: string) {
   return ["releases", "media", "avatars"].includes(folder);
 }
@@ -53,6 +55,7 @@ export async function POST(request: Request) {
     const fileType = String(body?.fileType ?? "").trim();
     const folder = String(body?.folder ?? "uploads").trim();
     const slug = String(body?.slug ?? "general").trim();
+    const fileSize = Number(body?.fileSize ?? 0);
 
     if (!fileName || !fileType) {
       return NextResponse.json(
@@ -68,9 +71,25 @@ export async function POST(request: Request) {
       );
     }
 
-    const allowedTypes = folder === "media"
-      ? ALLOWED_IMAGE_TYPES
-      : ALLOWED_FILE_TYPES;
+    if (!Number.isFinite(fileSize) || fileSize <= 0) {
+      return NextResponse.json(
+        { error: "Ungültige Dateigröße." },
+        { status: 400 }
+      );
+    }
+
+    if (fileSize > MAX_SINGLE_UPLOAD_SIZE) {
+      return NextResponse.json(
+        {
+          error:
+            "Die Datei ist zu groß für den aktuellen Direkt-Upload. Bitte vorerst maximal 500 MB hochladen.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const allowedTypes =
+      folder === "media" ? ALLOWED_IMAGE_TYPES : ALLOWED_FILE_TYPES;
 
     if (!allowedTypes.includes(fileType)) {
       return NextResponse.json(

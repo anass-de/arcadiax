@@ -95,7 +95,7 @@ export async function createPresignedUploadUrl(params: {
   });
 
   const uploadUrl = await getSignedUrl(r2Client, command, {
-    expiresIn: params.expiresIn ?? 60,
+    expiresIn: params.expiresIn ?? 3600,
   });
 
   const publicUrl = `${publicBaseUrl}/${params.key}`;
