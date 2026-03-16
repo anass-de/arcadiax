@@ -98,7 +98,7 @@ type DeleteTarget = {
 function formatDateTime(value: string | Date) {
   const date = new Date(value);
 
-  return new Intl.DateTimeFormat("de-DE", {
+  return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -202,7 +202,7 @@ export default function CommunityFeed({
     const found = findPostOrReplyById(itemId);
 
     if (!found) {
-      showError("Nachricht nicht gefunden.");
+      showError("Message not found.");
       return;
     }
 
@@ -211,7 +211,7 @@ export default function CommunityFeed({
     const allowed = currentUser?.id === ownerId || isAdmin;
 
     if (!allowed) {
-      showError("Du darfst diese Nachricht nicht löschen.");
+      showError("You are not allowed to delete this message.");
       return;
     }
 
@@ -239,12 +239,12 @@ export default function CommunityFeed({
     const trimmed = content.trim();
 
     if (!trimmed) {
-      showError("Bitte schreibe zuerst eine Nachricht.");
+      showError("Please write a message first.");
       return;
     }
 
     if (!isLoggedIn) {
-      showError("Du musst eingeloggt sein, um eine Nachricht zu schreiben.");
+      showError("You must be signed in to write a message.");
       return;
     }
 
@@ -265,7 +265,7 @@ export default function CommunityFeed({
       const data = (await response.json().catch(() => null)) as CreatePostResponse;
 
       if (!response.ok || !data?.post) {
-        throw new Error(data?.error || "Nachricht konnte nicht erstellt werden.");
+        throw new Error(data?.error || "Message could not be created.");
       }
 
       const createdPost = data.post;
@@ -279,12 +279,12 @@ export default function CommunityFeed({
       ]);
 
       setContent("");
-      showSuccess("Nachricht erfolgreich erstellt.");
+      showSuccess("Message created successfully.");
     } catch (error) {
       showError(
         error instanceof Error
           ? error.message
-          : "Beim Erstellen der Nachricht ist ein Fehler aufgetreten."
+          : "An error occurred while creating the message."
       );
     } finally {
       setIsCreating(false);
@@ -295,12 +295,12 @@ export default function CommunityFeed({
     const trimmed = replyContent.trim();
 
     if (!trimmed) {
-      showError("Bitte schreibe zuerst eine Antwort.");
+      showError("Please write a reply first.");
       return;
     }
 
     if (!isLoggedIn) {
-      showError("Du musst eingeloggt sein, um zu antworten.");
+      showError("You must be signed in to reply.");
       return;
     }
 
@@ -322,7 +322,7 @@ export default function CommunityFeed({
       const data = (await response.json().catch(() => null)) as CreateReplyResponse;
 
       if (!response.ok || !data?.post) {
-        throw new Error(data?.error || "Antwort konnte nicht erstellt werden.");
+        throw new Error(data?.error || "Reply could not be created.");
       }
 
       const createdReply = data.post;
@@ -344,12 +344,12 @@ export default function CommunityFeed({
 
       setReplyContent("");
       setReplyingToId(null);
-      showSuccess("Antwort erfolgreich erstellt.");
+      showSuccess("Reply created successfully.");
     } catch (error) {
       showError(
         error instanceof Error
           ? error.message
-          : "Beim Erstellen der Antwort ist ein Fehler aufgetreten."
+          : "An error occurred while creating the reply."
       );
     } finally {
       setBusyId(null);
@@ -367,7 +367,7 @@ export default function CommunityFeed({
     const trimmed = editingContent.trim();
 
     if (!trimmed) {
-      showError("Die Nachricht darf nicht leer sein.");
+      showError("The message cannot be empty.");
       return;
     }
 
@@ -388,9 +388,7 @@ export default function CommunityFeed({
       const data = (await response.json().catch(() => null)) as UpdateMessageResponse;
 
       if (!response.ok || !data?.post) {
-        throw new Error(
-          data?.error || "Nachricht konnte nicht aktualisiert werden."
-        );
+        throw new Error(data?.error || "Message could not be updated.");
       }
 
       const updatedItem = data.post;
@@ -431,12 +429,12 @@ export default function CommunityFeed({
 
       setEditingId(null);
       setEditingContent("");
-      showSuccess("Nachricht erfolgreich bearbeitet.");
+      showSuccess("Message updated successfully.");
     } catch (error) {
       showError(
         error instanceof Error
           ? error.message
-          : "Beim Bearbeiten der Nachricht ist ein Fehler aufgetreten."
+          : "An error occurred while updating the message."
       );
     } finally {
       setBusyId(null);
@@ -457,7 +455,7 @@ export default function CommunityFeed({
       const data = (await response.json().catch(() => null)) as DeleteMessageResponse;
 
       if (!response.ok || !data?.success) {
-        throw new Error(data?.error || "Nachricht konnte nicht gelöscht werden.");
+        throw new Error(data?.error || "Message could not be deleted.");
       }
 
       setPosts((prev) =>
@@ -478,12 +476,12 @@ export default function CommunityFeed({
       }
 
       setDeleteTarget(null);
-      showSuccess("Nachricht erfolgreich gelöscht.");
+      showSuccess("Message deleted successfully.");
     } catch (error) {
       showError(
         error instanceof Error
           ? error.message
-          : "Beim Löschen der Nachricht ist ein Fehler aufgetreten."
+          : "An error occurred while deleting the message."
       );
     } finally {
       setBusyId(null);
@@ -500,12 +498,12 @@ export default function CommunityFeed({
                 Community Feed
               </h2>
               <p className="mt-2 text-sm leading-6 text-white/60">
-                Teile Gedanken, Ideen und Feedback mit der ArcadiaX Community.
+                Share thoughts, ideas, and feedback with the ArcadiaX community.
               </p>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-white/70">
-              {posts.length} {posts.length === 1 ? "Beitrag" : "Beiträge"}
+              {posts.length} {posts.length === 1 ? "post" : "posts"}
             </div>
           </div>
 
@@ -538,13 +536,13 @@ export default function CommunityFeed({
                   onChange={(event) => setContent(event.target.value)}
                   rows={5}
                   maxLength={1000}
-                  placeholder="Schreibe einen neuen Beitrag an die ArcadiaX Community..."
+                  placeholder="Write a new post for the ArcadiaX community..."
                   className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
                 />
 
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm text-white/45">
-                    {content.trim().length}/1000 Zeichen
+                    {content.trim().length}/1000 characters
                   </p>
 
                   <button
@@ -554,7 +552,7 @@ export default function CommunityFeed({
                     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#6c5ce7] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Send className="h-4 w-4" />
-                    {isCreating ? "Wird gesendet..." : "Beitrag senden"}
+                    {isCreating ? "Posting..." : "Post comment"}
                   </button>
                 </div>
               </>
@@ -566,11 +564,10 @@ export default function CommunityFeed({
                   </div>
 
                   <div>
-                    <h3 className="font-medium text-white">Login erforderlich</h3>
+                    <h3 className="font-medium text-white">Login required</h3>
                     <p className="mt-1 text-sm leading-6 text-white/60">
-                      Du kannst alle Beiträge und Antworten lesen. Um selbst einen
-                      Beitrag zu schreiben oder auf andere zu antworten, musst du
-                      eingeloggt sein.
+                      You can read all posts and replies. To write your own post
+                      or reply to others, you need to sign in.
                     </p>
                   </div>
                 </div>
@@ -599,10 +596,10 @@ export default function CommunityFeed({
               </div>
 
               <h3 className="mt-4 text-xl font-semibold text-white">
-                Noch keine Beiträge
+                No posts yet
               </h3>
               <p className="mt-2 text-sm leading-6 text-white/60">
-                Sei der Erste und starte die Unterhaltung in der ArcadiaX Community.
+                Be the first to start a conversation in the ArcadiaX community.
               </p>
             </div>
           ) : (
@@ -657,7 +654,7 @@ export default function CommunityFeed({
                           {formatDateTime(post.createdAt)}
                           {new Date(post.updatedAt).getTime() >
                           new Date(post.createdAt).getTime()
-                            ? " · bearbeitet"
+                            ? " · edited"
                             : ""}
                         </p>
                       </div>
@@ -679,7 +676,7 @@ export default function CommunityFeed({
                           className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-3.5 py-2 text-sm text-white/75 transition hover:border-[#6c5ce7]/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Reply className="h-4 w-4" />
-                          Antworten
+                          Reply
                         </button>
                       ) : null}
 
@@ -691,7 +688,7 @@ export default function CommunityFeed({
                           className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-3.5 py-2 text-sm text-white/75 transition hover:border-[#6c5ce7]/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Pencil className="h-4 w-4" />
-                          Bearbeiten
+                          Edit
                         </button>
                       ) : null}
 
@@ -703,7 +700,7 @@ export default function CommunityFeed({
                           className="inline-flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-3.5 py-2 text-sm text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Trash2 className="h-4 w-4" />
-                          Löschen
+                          Delete
                         </button>
                       ) : null}
                     </div>
@@ -722,7 +719,7 @@ export default function CommunityFeed({
 
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <p className="text-sm text-white/45">
-                            {editingContent.trim().length}/1000 Zeichen
+                            {editingContent.trim().length}/1000 characters
                           </p>
 
                           <div className="flex flex-wrap gap-2">
@@ -733,7 +730,7 @@ export default function CommunityFeed({
                               className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <Save className="h-4 w-4" />
-                              {isBusy ? "Speichert..." : "Speichern"}
+                              {isBusy ? "Saving..." : "Save"}
                             </button>
 
                             <button
@@ -743,7 +740,7 @@ export default function CommunityFeed({
                               className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white/75 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <X className="h-4 w-4" />
-                              Abbrechen
+                              Cancel
                             </button>
                           </div>
                         </div>
@@ -760,7 +757,7 @@ export default function CommunityFeed({
                       <CornerDownRight className="h-4 w-4" />
                       <span>
                         {post.replies.length}{" "}
-                        {post.replies.length === 1 ? "Antwort" : "Antworten"}
+                        {post.replies.length === 1 ? "reply" : "replies"}
                       </span>
                     </div>
                   </div>
@@ -769,7 +766,7 @@ export default function CommunityFeed({
                     <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
                       <div className="mb-3 flex items-center gap-2 text-sm text-white/70">
                         <Reply className="h-4 w-4" />
-                        Antwort an{" "}
+                        Replying to{" "}
                         <span className="font-medium text-white">
                           {getDisplayName(post.user)}
                         </span>
@@ -780,13 +777,13 @@ export default function CommunityFeed({
                         onChange={(event) => setReplyContent(event.target.value)}
                         rows={4}
                         maxLength={1000}
-                        placeholder="Schreibe deine Antwort..."
+                        placeholder="Write your reply..."
                         className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
                       />
 
                       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <p className="text-sm text-white/45">
-                          {replyContent.trim().length}/1000 Zeichen
+                          {replyContent.trim().length}/1000 characters
                         </p>
 
                         <div className="flex flex-wrap gap-2">
@@ -797,7 +794,7 @@ export default function CommunityFeed({
                             className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <Send className="h-4 w-4" />
-                            {busyId === post.id ? "Wird gesendet..." : "Antwort senden"}
+                            {busyId === post.id ? "Posting..." : "Post reply"}
                           </button>
 
                           <button
@@ -807,7 +804,7 @@ export default function CommunityFeed({
                             className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white/75 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <X className="h-4 w-4" />
-                            Abbrechen
+                            Cancel
                           </button>
                         </div>
                       </div>
@@ -867,7 +864,7 @@ export default function CommunityFeed({
                                     {formatDateTime(reply.createdAt)}
                                     {new Date(reply.updatedAt).getTime() >
                                     new Date(reply.createdAt).getTime()
-                                      ? " · bearbeitet"
+                                      ? " · edited"
                                       : ""}
                                   </p>
                                 </div>
@@ -882,7 +879,7 @@ export default function CommunityFeed({
                                     className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/75 transition hover:border-[#6c5ce7]/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                                   >
                                     <Pencil className="h-4 w-4" />
-                                    Bearbeiten
+                                    Edit
                                   </button>
                                 ) : null}
 
@@ -894,7 +891,7 @@ export default function CommunityFeed({
                                     className="inline-flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                                   >
                                     <Trash2 className="h-4 w-4" />
-                                    Löschen
+                                    Delete
                                   </button>
                                 ) : null}
                               </div>
@@ -915,7 +912,7 @@ export default function CommunityFeed({
 
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                     <p className="text-sm text-white/45">
-                                      {editingContent.trim().length}/1000 Zeichen
+                                      {editingContent.trim().length}/1000 characters
                                     </p>
 
                                     <div className="flex flex-wrap gap-2">
@@ -928,7 +925,7 @@ export default function CommunityFeed({
                                         className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                                       >
                                         <Save className="h-4 w-4" />
-                                        {replyIsBusy ? "Speichert..." : "Speichern"}
+                                        {replyIsBusy ? "Saving..." : "Save"}
                                       </button>
 
                                       <button
@@ -938,7 +935,7 @@ export default function CommunityFeed({
                                         className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white/75 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                                       >
                                         <X className="h-4 w-4" />
-                                        Abbrechen
+                                        Cancel
                                       </button>
                                     </div>
                                   </div>
@@ -971,21 +968,21 @@ export default function CommunityFeed({
 
               <div className="min-w-0">
                 <h3 className="text-xl font-semibold text-white">
-                  Nachricht löschen?
+                  Delete message?
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-white/60">
-                  Diese {deleteTarget.kind === "post" ? "Nachricht" : "Antwort"} von{" "}
+                  This {deleteTarget.kind === "post" ? "message" : "reply"} by{" "}
                   <span className="font-medium text-white">
                     {deleteTarget.authorName}
                   </span>{" "}
-                  wird entfernt.
+                  will be removed.
                 </p>
               </div>
             </div>
 
             <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/70">
               <p className="line-clamp-3 whitespace-pre-wrap break-words">
-                {deleteTarget.preview || "Keine Vorschau verfügbar."}
+                {deleteTarget.preview || "No preview available."}
               </p>
             </div>
 
@@ -996,7 +993,7 @@ export default function CommunityFeed({
                 disabled={busyId === deleteTarget.id}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-white/80 transition hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Abbrechen
+                Cancel
               </button>
 
               <button
@@ -1006,7 +1003,7 @@ export default function CommunityFeed({
                 className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Trash2 className="h-4 w-4" />
-                {busyId === deleteTarget.id ? "Löscht..." : "Endgültig löschen"}
+                {busyId === deleteTarget.id ? "Deleting..." : "Delete permanently"}
               </button>
             </div>
           </div>
