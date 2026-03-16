@@ -1,14 +1,11 @@
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { createClient } from "@supabase/supabase-js";
 import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
   ExternalLink,
-  FileText,
   ImageIcon,
   Shield,
   Upload,
@@ -16,7 +13,7 @@ import {
 
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
-import SubmitButton from "@/components/SubmitButton";
+import EditReleaseForm from "@/components/releases/edit-release-form";
 
 type PageProps = {
   params: Promise<{
@@ -61,178 +58,9 @@ function formatDateTime(date: Date) {
   }).format(new Date(date));
 }
 
-function normalizeOptional(value: FormDataEntryValue | null) {
-  const text = String(value ?? "").trim();
-  return text ? text : null;
-}
-
 function normalizeMessage(value?: string | null) {
   const text = value?.trim();
   return text ? text : null;
-}
-
-function slugify(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-_]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function getStorageBucket() {
-  return process.env.SUPABASE_STORAGE_BUCKET || "arcadiax";
-}
-
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceRoleKey) {
-    throw new Error(
-      "Supabase is not configured correctly. NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing."
-    );
-  }
-
-  return createClient(url, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
-
-function extractStoragePathFromPublicUrl(publicUrl: string | null | undefined) {
-  if (!publicUrl) {
-    return null;
-  }
-
-  const bucket = getStorageBucket();
-
-  try {
-    const url = new URL(publicUrl);
-    const marker = `/storage/v1/object/public/${bucket}/`;
-    const index = url.pathname.indexOf(marker);
-
-    if (index === -1) {
-      return null;
-    }
-
-    return decodeURIComponent(url.pathname.slice(index + marker.length));
-  } catch {
-    return null;
-  }
-}
-
-async function removeFileFromStorage(publicUrl: string | null | undefined) {
-  const filePath = extractStoragePathFromPublicUrl(publicUrl);
-
-  if (!filePath) {
-    return;
-  }
-
-  const supabase = getSupabaseAdmin();
-  const bucket = getStorageBucket();
-
-  const { error } = await supabase.storage.from(bucket).remove([filePath]);
-
-  if (error) {
-    console.error("Could not delete old file:", error.message);
-  }
-}
-
-async function uploadFileToStorage(args: {
-  file: File;
-  folder: string;
-  fileNamePrefix: string;
-}) {
-  const supabase = getSupabaseAdmin();
-  const bucket = getStorageBucket();
-
-  const buffer = Buffer.from(await args.file.arrayBuffer());
-  const safeOriginalName = args.file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-  const filePath = `${args.folder}/${Date.now()}-${args.fileNamePrefix}-${safeOriginalName}`;
-
-  const { error } = await supabase.storage.from(bucket).upload(filePath, buffer, {
-    contentType: args.file.type || "application/octet-stream",
-    upsert: false,
-  });
-
-  if (error) {
-    throw new Error(`Upload failed: ${error.message}`);
-  }
-
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from(bucket).getPublicUrl(filePath);
-
-  return publicUrl;
-}
-
-function validateImageFile(file: File) {
-  const maxSize = 10 * 1024 * 1024;
-  const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-
-  if (!allowedTypes.includes(file.type)) {
-    throw new Error("Invalid image format. Allowed: JPG, PNG, WEBP, and GIF.");
-  }
-
-  if (file.size > maxSize) {
-    throw new Error("The image is too large. Maximum allowed size is 10 MB.");
-  }
-}
-
-function validateReleaseFile(file: File) {
-  const maxSize = 500 * 1024 * 1024;
-
-  if (file.size > maxSize) {
-    throw new Error("The release file is too large. Maximum allowed size is 500 MB.");
-  }
-}
-
-async function createUniqueSlug(baseSlug: string, releaseId: string) {
-  let slug = baseSlug;
-  let counter = 2;
-
-  while (true) {
-    const existing = await prisma.release.findFirst({
-      where: {
-        slug,
-        NOT: {
-          id: releaseId,
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (!existing) {
-      return slug;
-    }
-
-    slug = `${baseSlug}-${counter}`;
-    counter += 1;
-  }
-}
-
-function buildEditUrl(
-  releaseId: string,
-  params: Record<string, string | null | undefined>
-) {
-  const query = new URLSearchParams();
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value) {
-      query.set(key, value);
-    }
-  }
-
-  const queryString = query.toString();
-
-  return queryString
-    ? `/dashboard/releases/${releaseId}/edit?${queryString}`
-    : `/dashboard/releases/${releaseId}/edit`;
 }
 
 function getStatusLabel(status: "DRAFT" | "PUBLISHED") {
@@ -275,6 +103,7 @@ export default async function EditReleasePage({
       slug: true,
       version: true,
       description: true,
+      changelog: true,
       fileUrl: true,
       imageUrl: true,
       status: true,
@@ -291,158 +120,6 @@ export default async function EditReleasePage({
 
   if (!release) {
     notFound();
-  }
-
-  async function updateReleaseAction(formData: FormData) {
-    "use server";
-
-    const session = await getServerSession(authOptions);
-    const sessionUser = getSessionUser(session);
-
-    if (!sessionUser || sessionUser.role !== "ADMIN") {
-      redirect("/");
-    }
-
-    const releaseId = String(formData.get("releaseId") || "").trim();
-
-    if (!releaseId) {
-      redirect(buildEditUrl(id, { error: "Invalid release ID." }));
-    }
-
-    try {
-      const title = String(formData.get("title") || "").trim();
-      const version = String(formData.get("version") || "").trim();
-      const status = String(formData.get("status") || "")
-        .trim()
-        .toUpperCase();
-
-      const slugInput = normalizeOptional(formData.get("slug"));
-      const description = normalizeOptional(formData.get("description"));
-
-      const imageFile = formData.get("imageFile");
-      const releaseFile = formData.get("releaseFile");
-
-      if (!title) {
-        throw new Error("Title cannot be empty.");
-      }
-
-      if (!version) {
-        throw new Error("Version cannot be empty.");
-      }
-
-      if (status !== "DRAFT" && status !== "PUBLISHED") {
-        throw new Error("Invalid status.");
-      }
-
-      const existing = await prisma.release.findUnique({
-        where: { id: releaseId },
-        select: {
-          id: true,
-          slug: true,
-          imageUrl: true,
-          fileUrl: true,
-        },
-      });
-
-      if (!existing) {
-        throw new Error("Release not found.");
-      }
-
-      let nextImageUrl = existing.imageUrl;
-      let nextFileUrl = existing.fileUrl;
-      let nextSlug = existing.slug;
-
-      if (slugInput !== null) {
-        const normalizedSlug = slugify(slugInput);
-
-        if (!normalizedSlug) {
-          throw new Error("The slug is invalid.");
-        }
-
-        nextSlug = await createUniqueSlug(normalizedSlug, releaseId);
-      }
-
-      const releaseSlugOrId = nextSlug || existing.slug || releaseId;
-      const baseFolder = `releases/${releaseSlugOrId}`;
-
-      if (imageFile instanceof File && imageFile.size > 0) {
-        validateImageFile(imageFile);
-
-        const uploadedImageUrl = await uploadFileToStorage({
-          file: imageFile,
-          folder: `${baseFolder}/images`,
-          fileNamePrefix: "image",
-        });
-
-        await removeFileFromStorage(existing.imageUrl);
-        nextImageUrl = uploadedImageUrl;
-      }
-
-      if (releaseFile instanceof File && releaseFile.size > 0) {
-        validateReleaseFile(releaseFile);
-
-        const uploadedFileUrl = await uploadFileToStorage({
-          file: releaseFile,
-          folder: `${baseFolder}/files`,
-          fileNamePrefix: "release",
-        });
-
-        await removeFileFromStorage(existing.fileUrl);
-        nextFileUrl = uploadedFileUrl;
-      }
-
-      if (!nextFileUrl) {
-        throw new Error(
-          "At least one release file is required. Please choose a file from your computer."
-        );
-      }
-
-      await prisma.release.update({
-        where: {
-          id: releaseId,
-        },
-        data: {
-          title,
-          version,
-          status: status as "DRAFT" | "PUBLISHED",
-          slug: nextSlug,
-          description,
-          imageUrl: nextImageUrl,
-          fileUrl: nextFileUrl,
-        },
-      });
-
-      revalidatePath("/");
-      revalidatePath("/dashboard");
-      revalidatePath("/dashboard/releases");
-      revalidatePath(`/dashboard/releases/${releaseId}/edit`);
-      revalidatePath("/releases");
-      revalidatePath(
-        existing.slug ? `/releases/${existing.slug}` : `/releases/${releaseId}`
-      );
-      revalidatePath(
-        nextSlug ? `/releases/${nextSlug}` : `/releases/${releaseId}`
-      );
-    } catch (error) {
-      console.error("Error updating release:", error);
-
-      const message =
-        error instanceof Error
-          ? error.message
-          : "An unknown error occurred while saving.";
-
-      redirect(
-        buildEditUrl(releaseId, {
-          error: message,
-        })
-      );
-    }
-
-    redirect(
-      buildEditUrl(releaseId, {
-        success: "Your changes have been saved successfully.",
-      })
-    );
   }
 
   const publicHref = release.slug?.trim()
@@ -466,9 +143,9 @@ export default async function EditReleasePage({
                 {release.title}
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/70 sm:text-base">
-                Update the title, version, slug, status, and description. You can
-                also replace the current image and release file directly from your
-                computer.
+                Update the title, version, slug, status, and description. You
+                can also replace the current image and release file directly
+                from your computer.
               </p>
             </div>
           </div>
@@ -570,15 +247,10 @@ export default async function EditReleasePage({
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <form
-          action={updateReleaseAction}
-          className="rounded-[32px] border border-white/10 bg-white/[0.03] p-6 shadow-2xl shadow-black/20 backdrop-blur sm:p-8"
-        >
-          <input type="hidden" name="releaseId" value={release.id} />
-
+        <div className="rounded-[32px] border border-white/10 bg-white/[0.03] p-6 shadow-2xl shadow-black/20 backdrop-blur sm:p-8">
           <div className="mb-6 flex items-center gap-3">
             <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-              <FileText className="h-5 w-5 text-[#9d8dff]" />
+              <ImageIcon className="h-5 w-5 text-[#9d8dff]" />
             </div>
             <div>
               <div className="text-sm font-medium text-white/45">Form</div>
@@ -588,153 +260,20 @@ export default async function EditReleasePage({
             </div>
           </div>
 
-          <div className="grid gap-5">
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="title"
-                  className="mb-2 block text-sm font-medium text-white/75"
-                >
-                  Title
-                </label>
-                <input
-                  id="title"
-                  name="title"
-                  defaultValue={release.title}
-                  required
-                  placeholder="e.g. ArcadiaX"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="version"
-                  className="mb-2 block text-sm font-medium text-white/75"
-                >
-                  Version
-                </label>
-                <input
-                  id="version"
-                  name="version"
-                  defaultValue={release.version}
-                  required
-                  placeholder="e.g. 1.0.0"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="slug"
-                  className="mb-2 block text-sm font-medium text-white/75"
-                >
-                  Slug
-                </label>
-                <input
-                  id="slug"
-                  name="slug"
-                  defaultValue={release.slug ?? ""}
-                  placeholder="e.g. arcadiax"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
-                />
-                <p className="mt-2 text-xs text-white/45">
-                  Optional. Used for the public URL.
-                </p>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="status"
-                  className="mb-2 block text-sm font-medium text-white/75"
-                >
-                  Status
-                </label>
-                <select
-                  id="status"
-                  name="status"
-                  defaultValue={release.status}
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
-                >
-                  <option value="DRAFT">DRAFT</option>
-                  <option value="PUBLISHED">PUBLISHED</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label
-                htmlFor="description"
-                className="mb-2 block text-sm font-medium text-white/75"
-              >
-                Description
-              </label>
-              <textarea
-                id="description"
-                name="description"
-                defaultValue={release.description ?? ""}
-                rows={7}
-                placeholder="Describe the release, features, changes, or important notes..."
-                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05]"
-              />
-            </div>
-
-            <div className="grid gap-5">
-              <div>
-                <label
-                  htmlFor="imageFile"
-                  className="mb-2 flex items-center gap-2 text-sm font-medium text-white/75"
-                >
-                  <ImageIcon className="h-4 w-4 text-[#9d8dff]" />
-                  Upload New Image
-                </label>
-                <input
-                  id="imageFile"
-                  name="imageFile"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
-                />
-                <p className="mt-2 text-xs text-white/45">
-                  Optional. If you do not select a file, the current image will be kept.
-                </p>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="releaseFile"
-                  className="mb-2 flex items-center gap-2 text-sm font-medium text-white/75"
-                >
-                  <Upload className="h-4 w-4 text-[#9d8dff]" />
-                  Upload New Release File
-                </label>
-                <input
-                  id="releaseFile"
-                  name="releaseFile"
-                  type="file"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
-                />
-                <p className="mt-2 text-xs text-white/45">
-                  Optional. If you do not select a file, the current release file will be kept.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <SubmitButton />
-
-              <Link
-                href="/dashboard/releases"
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-[#6c5ce7]/40 hover:text-white"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                <span>Cancel</span>
-              </Link>
-            </div>
-          </div>
-        </form>
+          <EditReleaseForm
+            release={{
+              id: release.id,
+              title: release.title,
+              slug: release.slug,
+              version: release.version,
+              description: release.description,
+              changelog: release.changelog,
+              fileUrl: release.fileUrl,
+              imageUrl: release.imageUrl,
+              status: release.status,
+            }}
+          />
+        </div>
 
         <div className="space-y-6">
           <section className="rounded-[32px] border border-white/10 bg-white/[0.03] p-6 shadow-2xl shadow-black/20 backdrop-blur sm:p-8">
@@ -743,7 +282,9 @@ export default async function EditReleasePage({
                 <ImageIcon className="h-5 w-5 text-[#9d8dff]" />
               </div>
               <div>
-                <div className="text-sm font-medium text-white/45">Preview</div>
+                <div className="text-sm font-medium text-white/45">
+                  Preview
+                </div>
                 <h2 className="text-2xl font-semibold text-white">
                   Current Image & File
                 </h2>

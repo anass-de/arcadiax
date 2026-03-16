@@ -5,14 +5,12 @@ import {
   AlertCircle,
   CheckCircle2,
   FileText,
-  ImageIcon,
   Lightbulb,
-  Plus,
   Shield,
-  Upload,
 } from "lucide-react";
 
 import { authOptions } from "@/lib/auth";
+import NewReleaseForm from "@/components/releases/new-release-form";
 
 type SessionUser = {
   role?: "USER" | "ADMIN" | null;
@@ -105,148 +103,7 @@ export default async function NewReleasePage({ searchParams }: PageProps) {
             </div>
           </div>
 
-          <form
-            action="/api/admin/releases"
-            method="POST"
-            encType="multipart/form-data"
-            className="grid gap-5"
-          >
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-zinc-300">
-                  Titel
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  placeholder="z. B. ArcadiaX"
-                  required
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-zinc-300">
-                  Version
-                </label>
-                <input
-                  type="text"
-                  name="version"
-                  placeholder="z. B. 1.0.0"
-                  required
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-zinc-300">
-                  Slug
-                </label>
-                <input
-                  type="text"
-                  name="slug"
-                  placeholder="z. B. arcadiax"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
-                />
-                <p className="mt-2 text-xs text-zinc-500">
-                  Optional. Wenn leer, wird der Slug automatisch aus dem Titel
-                  erzeugt.
-                </p>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-zinc-300">
-                  Status
-                </label>
-                <select
-                  name="status"
-                  defaultValue="PUBLISHED"
-                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition focus:border-cyan-400/30 focus:bg-zinc-900"
-                >
-                  <option value="DRAFT">DRAFT</option>
-                  <option value="PUBLISHED">PUBLISHED</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-300">
-                Beschreibung
-              </label>
-              <textarea
-                name="description"
-                rows={5}
-                placeholder="Beschreibe das Release, Funktionen, Änderungen oder Hinweise..."
-                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-300">
-                Changelog
-              </label>
-              <textarea
-                name="changelog"
-                rows={5}
-                placeholder="Was hat sich geändert?"
-                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/30 focus:bg-zinc-900"
-              />
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300">
-                  <ImageIcon className="h-4 w-4 text-cyan-300" />
-                  Vorschaubild hochladen
-                </label>
-                <input
-                  type="file"
-                  name="image"
-                  accept="image/*"
-                  className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-cyan-400/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
-                />
-                <p className="mt-2 text-xs text-zinc-500">
-                  Optional. Bild für Karten, Listen und Vorschau.
-                </p>
-              </div>
-
-              <div>
-                <label className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300">
-                  <Upload className="h-4 w-4 text-cyan-300" />
-                  Release-Datei hochladen
-                </label>
-                <input
-                  type="file"
-                  name="file"
-                  required
-                  className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-cyan-400/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
-                />
-                <p className="mt-2 text-xs text-zinc-500">
-                  Pflichtfeld. Das ist die eigentliche Release-Datei zum
-                  Download.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-3 pt-2">
-              <button
-                type="submit"
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Release erstellen</span>
-              </button>
-
-              <Link
-                href="/dashboard/releases"
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
-              >
-                Abbrechen
-              </Link>
-            </div>
-          </form>
+          <NewReleaseForm />
         </section>
 
         <aside className="space-y-6">
@@ -273,19 +130,19 @@ export default async function NewReleasePage({ searchParams }: PageProps) {
 
               <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
                 Nutze einen eindeutigen Slug wie{" "}
-                <span className="font-medium text-white">arcadiax</span>. Wenn
-                du nichts einträgst, wird er automatisch erzeugt.
+                <span className="font-medium text-white">arcadiax</span>.
+                Wenn du nichts einträgst, wird er automatisch erzeugt.
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
                 Setze den Status auf{" "}
-                <span className="font-medium text-white">PUBLISHED</span>, wenn
-                das Release direkt auf der Website erscheinen soll.
+                <span className="font-medium text-white">PUBLISHED</span>,
+                wenn das Release direkt auf der Website erscheinen soll.
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-                Lade die Datei direkt hoch. Die Download-URL wird automatisch
-                gespeichert.
+                Die Datei wird direkt in den Storage hochgeladen. Danach
+                werden nur die Metadaten gespeichert.
               </div>
             </div>
           </section>

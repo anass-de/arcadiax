@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { createClient } from "@supabase/supabase-js";
+import { revalidatePath } from "next/cache";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { deleteR2ObjectsFromUrls } from "@/lib/r2";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET;
+export const runtime = "nodejs";
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -24,6 +23,20 @@ function slugify(value: string) {
     .replace(/^-|-$/g, "");
 }
 
+function normalizeOptionalText(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+function isValidHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
 
@@ -36,52 +49,6 @@ async function requireAdmin() {
   }
 
   return { session, response: null };
-}
-
-function getSupabaseAdmin() {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_STORAGE_BUCKET) {
-    return null;
-  }
-
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-}
-
-function getStoragePathFromPublicUrl(fileUrl: string): string | null {
-  if (!SUPABASE_STORAGE_BUCKET || !fileUrl) return null;
-
-  try {
-    const url = new URL(fileUrl);
-    const marker = `/storage/v1/object/public/${SUPABASE_STORAGE_BUCKET}/`;
-    const index = url.pathname.indexOf(marker);
-
-    if (index === -1) return null;
-
-    const rawPath = url.pathname.slice(index + marker.length);
-    return decodeURIComponent(rawPath);
-  } catch {
-    return null;
-  }
-}
-
-async function removeSupabaseObjects(urls: Array<string | null | undefined>) {
-  const supabase = getSupabaseAdmin();
-  if (!supabase || !SUPABASE_STORAGE_BUCKET) return;
-
-  const paths = urls
-    .map((url) => (url ? getStoragePathFromPublicUrl(url) : null))
-    .filter((value): value is string => Boolean(value));
-
-  if (paths.length === 0) return;
-
-  const uniquePaths = Array.from(new Set(paths));
-
-  const { error } = await supabase.storage
-    .from(SUPABASE_STORAGE_BUCKET)
-    .remove(uniquePaths);
-
-  if (error) {
-    console.error("Supabase remove warning:", error);
-  }
 }
 
 export async function GET(
@@ -155,6 +122,10 @@ export async function PATCH(
     const { id } = await context.params;
     const body = await req.json().catch(() => null);
 
+    if (!body || typeof body !== "object") {
+      return jsonError("Ungültige JSON-Anfrage.");
+    }
+
     const current = await prisma.release.findUnique({
       where: { id },
       select: {
@@ -175,13 +146,13 @@ export async function PATCH(
     }
 
     const nextTitle =
-      body?.title !== undefined ? String(body.title).trim() : current.title;
+      body.title !== undefined ? String(body.title).trim() : current.title;
 
     const nextVersion =
-      body?.version !== undefined ? String(body.version).trim() : current.version;
+      body.version !== undefined ? String(body.version).trim() : current.version;
 
     let nextSlug =
-      body?.slug !== undefined ? String(body.slug).trim() : current.slug;
+      body.slug !== undefined ? String(body.slug).trim() : current.slug;
 
     if (!nextTitle) {
       return jsonError("Titel fehlt.");
@@ -210,7 +181,10 @@ export async function PATCH(
     });
 
     if (duplicate) {
-      return jsonError("Ein anderes Release mit diesem Slug existiert bereits.", 409);
+      return jsonError(
+        "Ein anderes Release mit diesem Slug existiert bereits.",
+        409
+      );
     }
 
     const data: {
@@ -228,36 +202,46 @@ export async function PATCH(
       slug: nextSlug,
     };
 
-    if (body?.description !== undefined) {
-      const value = String(body.description ?? "").trim();
-      data.description = value || null;
+    if (body.description !== undefined) {
+      data.description = normalizeOptionalText(body.description);
     }
 
-    if (body?.changelog !== undefined) {
-      const value = String(body.changelog ?? "").trim();
-      data.changelog = value || null;
+    if (body.changelog !== undefined) {
+      data.changelog = normalizeOptionalText(body.changelog);
     }
 
-    if (body?.fileUrl !== undefined) {
+    if (body.fileUrl !== undefined) {
       const value = String(body.fileUrl ?? "").trim();
-      if (!value) {
+
+      if (!value || !isValidHttpUrl(value)) {
         return jsonError("fileUrl ist ungültig.");
       }
+
       data.fileUrl = value;
     }
 
-    if (body?.imageUrl !== undefined) {
+    if (body.imageUrl !== undefined) {
       const value = String(body.imageUrl ?? "").trim();
+
+      if (value && !isValidHttpUrl(value)) {
+        return jsonError("imageUrl ist ungültig.");
+      }
+
       data.imageUrl = value || null;
     }
 
-    if (body?.status !== undefined) {
+    if (body.status !== undefined) {
       const value = String(body.status ?? "").trim().toUpperCase();
+
       if (value !== "DRAFT" && value !== "PUBLISHED") {
         return jsonError("Ungültiger Status.");
       }
-      data.status = value;
+
+      data.status = value as "DRAFT" | "PUBLISHED";
     }
+
+    const oldFileUrl = current.fileUrl;
+    const oldImageUrl = current.imageUrl;
 
     const updated = await prisma.release.update({
       where: { id },
@@ -283,13 +267,25 @@ export async function PATCH(
       },
     });
 
-    if (body?.fileUrl !== undefined && current.fileUrl && current.fileUrl !== updated.fileUrl) {
-      await removeSupabaseObjects([current.fileUrl]);
+    if (body.fileUrl !== undefined && oldFileUrl && oldFileUrl !== updated.fileUrl) {
+      await deleteR2ObjectsFromUrls([oldFileUrl]);
     }
 
-    if (body?.imageUrl !== undefined && current.imageUrl && current.imageUrl !== updated.imageUrl) {
-      await removeSupabaseObjects([current.imageUrl]);
+    if (
+      body.imageUrl !== undefined &&
+      oldImageUrl &&
+      oldImageUrl !== updated.imageUrl
+    ) {
+      await deleteR2ObjectsFromUrls([oldImageUrl]);
     }
+
+    revalidatePath("/");
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/releases");
+    revalidatePath(`/dashboard/releases/${id}/edit`);
+    revalidatePath("/releases");
+    revalidatePath(current.slug ? `/releases/${current.slug}` : `/releases/${id}`);
+    revalidatePath(updated.slug ? `/releases/${updated.slug}` : `/releases/${id}`);
 
     return NextResponse.json({
       ok: true,
@@ -315,6 +311,7 @@ export async function DELETE(
       where: { id },
       select: {
         id: true,
+        slug: true,
         fileUrl: true,
         imageUrl: true,
       },
@@ -328,7 +325,14 @@ export async function DELETE(
       where: { id },
     });
 
-    await removeSupabaseObjects([release.fileUrl, release.imageUrl]);
+    await deleteR2ObjectsFromUrls([release.fileUrl, release.imageUrl]);
+
+    revalidatePath("/");
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/releases");
+    revalidatePath(`/dashboard/releases/${id}/edit`);
+    revalidatePath("/releases");
+    revalidatePath(release.slug ? `/releases/${release.slug}` : `/releases/${id}`);
 
     return NextResponse.json({
       ok: true,

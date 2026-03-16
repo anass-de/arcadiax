@@ -1,24 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@supabase/supabase-js";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
-
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
-const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1 GB
-
-const IMAGE_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "image/avif",
-  "image/svg+xml",
-]);
 
 type SessionUser = {
   id?: string | null;
@@ -32,6 +19,20 @@ type AdminSessionUser = {
   role: "ADMIN";
   email?: string | null;
   name?: string | null;
+};
+
+type CreateReleasePayload = {
+  title?: string;
+  version?: string;
+  slug?: string;
+  description?: string | null;
+  changelog?: string | null;
+  status?: "DRAFT" | "PUBLISHED" | string;
+  fileUrl?: string;
+  fileName?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  imageUrl?: string | null;
 };
 
 function getSessionUser(
@@ -70,7 +71,7 @@ async function requireAdmin(request: NextRequest) {
   };
 }
 
-function normalizeOptionalText(value: FormDataEntryValue | null) {
+function normalizeOptionalText(value?: string | null) {
   const text = String(value ?? "").trim();
   return text ? text : null;
 }
@@ -86,46 +87,6 @@ function slugify(value: string) {
       .replace(/^-+|-+$/g, "") || "release";
 
   return slug.slice(0, 120);
-}
-
-function sanitizeFileName(fileName: string) {
-  const lastDot = fileName.lastIndexOf(".");
-  const base = lastDot >= 0 ? fileName.slice(0, lastDot) : fileName;
-  const ext = lastDot >= 0 ? fileName.slice(lastDot).toLowerCase() : "";
-
-  const safeBase =
-    base
-      .normalize("NFKD")
-      .replace(/[^\w.-]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 120) || "file";
-
-  const safeExt = ext.replace(/[^\w.]+/g, "");
-
-  return `${safeBase}${safeExt}`;
-}
-
-function getStorageBucket() {
-  return process.env.SUPABASE_STORAGE_BUCKET || "arcadiax";
-}
-
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceRoleKey) {
-    throw new Error(
-      "Supabase ist nicht korrekt konfiguriert. NEXT_PUBLIC_SUPABASE_URL oder SUPABASE_SERVICE_ROLE_KEY fehlt."
-    );
-  }
-
-  return createClient(url, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
 }
 
 async function createUniqueSlug(baseSlug: string) {
@@ -147,61 +108,6 @@ async function createUniqueSlug(baseSlug: string) {
   }
 }
 
-async function uploadFileToStorage(args: {
-  file: File;
-  folder: string;
-  fileNamePrefix: string;
-}) {
-  const supabase = getSupabaseAdmin();
-  const bucket = getStorageBucket();
-
-  const buffer = Buffer.from(await args.file.arrayBuffer());
-  const safeOriginalName = sanitizeFileName(args.file.name);
-  const filePath = `${args.folder}/${Date.now()}-${args.fileNamePrefix}-${safeOriginalName}`;
-
-  const { error } = await supabase.storage.from(bucket).upload(filePath, buffer, {
-    contentType: args.file.type || "application/octet-stream",
-    upsert: false,
-  });
-
-  if (error) {
-    throw new Error(`Upload fehlgeschlagen: ${error.message}`);
-  }
-
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from(bucket).getPublicUrl(filePath);
-
-  return {
-    filePath,
-    publicUrl,
-  };
-}
-
-async function removeFilesFromStorage(filePaths: string[]) {
-  if (filePaths.length === 0) {
-    return;
-  }
-
-  const supabase = getSupabaseAdmin();
-  const bucket = getStorageBucket();
-
-  const uniquePaths = [...new Set(filePaths.filter(Boolean))];
-
-  if (uniquePaths.length === 0) {
-    return;
-  }
-
-  const { error } = await supabase.storage.from(bucket).remove(uniquePaths);
-
-  if (error) {
-    console.error(
-      "Konnte Dateien aus Supabase Storage nicht löschen:",
-      error.message
-    );
-  }
-}
-
 function redirectToNewWithError(request: NextRequest, message: string) {
   const url = new URL("/dashboard/releases/new", request.url);
   url.searchParams.set("error", message);
@@ -218,35 +124,16 @@ function redirectToEditWithSuccess(
   return NextResponse.redirect(url, 303);
 }
 
-function validateImageFile(file: File) {
-  const imageMime = file.type?.trim();
-
-  if (!imageMime || !IMAGE_MIME_TYPES.has(imageMime)) {
-    throw new Error(
-      "Ungültiges Bildformat. Erlaubt sind JPG, PNG, WEBP, GIF, AVIF und SVG."
-    );
-  }
-
-  if (file.size > MAX_IMAGE_SIZE) {
-    throw new Error("Das Bild ist zu groß. Maximal erlaubt sind 10 MB.");
-  }
-}
-
-function validateReleaseFile(file: File) {
-  if (file.size <= 0) {
-    throw new Error("Bitte wähle eine Release-Datei aus.");
-  }
-
-  if (file.size > MAX_FILE_SIZE) {
-    throw new Error(
-      "Die Release-Datei ist zu groß. Maximal erlaubt sind 1 GB."
-    );
+function isValidHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
   }
 }
 
 export async function POST(request: NextRequest) {
-  const uploadedPaths: string[] = [];
-
   try {
     const auth = await requireAdmin(request);
 
@@ -255,16 +142,35 @@ export async function POST(request: NextRequest) {
     }
 
     const userId = auth.user.id;
-    const formData = await request.formData();
 
-    const title = String(formData.get("title") ?? "").trim();
-    const version = String(formData.get("version") ?? "").trim();
-    const slugInput = String(formData.get("slug") ?? "").trim();
-    const description = normalizeOptionalText(formData.get("description"));
-    const changelog = normalizeOptionalText(formData.get("changelog"));
-    const statusRaw = String(formData.get("status") ?? "PUBLISHED")
+    let payload: CreateReleasePayload;
+
+    try {
+      payload = (await request.json()) as CreateReleasePayload;
+    } catch {
+      return redirectToNewWithError(
+        request,
+        "Ungültige Anfrage. Es wurden keine gültigen JSON-Daten gesendet."
+      );
+    }
+
+    const title = String(payload.title ?? "").trim();
+    const version = String(payload.version ?? "").trim();
+    const slugInput = String(payload.slug ?? "").trim();
+    const description = normalizeOptionalText(payload.description);
+    const changelog = normalizeOptionalText(payload.changelog);
+    const statusRaw = String(payload.status ?? "PUBLISHED")
       .trim()
       .toUpperCase();
+
+    const fileUrl = String(payload.fileUrl ?? "").trim();
+    const fileName = normalizeOptionalText(payload.fileName);
+    const fileSize =
+      typeof payload.fileSize === "number" && Number.isFinite(payload.fileSize)
+        ? payload.fileSize
+        : null;
+    const mimeType = normalizeOptionalText(payload.mimeType);
+    const imageUrl = normalizeOptionalText(payload.imageUrl);
 
     if (!title) {
       return redirectToNewWithError(request, "Titel darf nicht leer sein.");
@@ -278,64 +184,29 @@ export async function POST(request: NextRequest) {
       return redirectToNewWithError(request, "Ungültiger Status.");
     }
 
-    const fileEntry = formData.get("file");
-
-    if (!(fileEntry instanceof File)) {
+    if (!fileUrl) {
       return redirectToNewWithError(
         request,
-        "Bitte wähle eine Release-Datei aus."
+        "Die Release-Datei wurde noch nicht hochgeladen."
       );
     }
 
-    try {
-      validateReleaseFile(fileEntry);
-    } catch (error) {
+    if (!isValidHttpUrl(fileUrl)) {
       return redirectToNewWithError(
         request,
-        error instanceof Error
-          ? error.message
-          : "Die Release-Datei ist ungültig."
+        "Die Release-Datei-URL ist ungültig."
       );
     }
 
-    const imageEntry = formData.get("image");
-    const imageFile =
-      imageEntry instanceof File && imageEntry.size > 0 ? imageEntry : null;
-
-    if (imageFile) {
-      try {
-        validateImageFile(imageFile);
-      } catch (error) {
-        return redirectToNewWithError(
-          request,
-          error instanceof Error ? error.message : "Das Bild ist ungültig."
-        );
-      }
+    if (imageUrl && !isValidHttpUrl(imageUrl)) {
+      return redirectToNewWithError(
+        request,
+        "Die Bild-URL ist ungültig."
+      );
     }
 
     const baseSlug = slugify(slugInput || title);
     const uniqueSlug = await createUniqueSlug(baseSlug);
-    const baseFolder = `releases/${uniqueSlug}`;
-
-    const uploadedReleaseFile = await uploadFileToStorage({
-      file: fileEntry,
-      folder: `${baseFolder}/files`,
-      fileNamePrefix: "release",
-    });
-    uploadedPaths.push(uploadedReleaseFile.filePath);
-
-    let imageUrl: string | null = null;
-
-    if (imageFile) {
-      const uploadedImage = await uploadFileToStorage({
-        file: imageFile,
-        folder: `${baseFolder}/images`,
-        fileNamePrefix: "image",
-      });
-
-      uploadedPaths.push(uploadedImage.filePath);
-      imageUrl = uploadedImage.publicUrl;
-    }
 
     const createdRelease = await prisma.release.create({
       data: {
@@ -344,7 +215,7 @@ export async function POST(request: NextRequest) {
         slug: uniqueSlug,
         description,
         changelog,
-        fileUrl: uploadedReleaseFile.publicUrl,
+        fileUrl,
         imageUrl,
         status: statusRaw as "DRAFT" | "PUBLISHED",
         authorId: userId,
@@ -372,8 +243,6 @@ export async function POST(request: NextRequest) {
         : "Release wurde erfolgreich als Entwurf gespeichert."
     );
   } catch (error) {
-    await removeFilesFromStorage(uploadedPaths);
-
     console.error("POST /api/admin/releases error:", error);
 
     return redirectToNewWithError(
