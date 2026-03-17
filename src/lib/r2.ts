@@ -42,8 +42,6 @@ export const r2Client = new S3Client({
     accessKeyId,
     secretAccessKey,
   },
-  requestChecksumCalculation: "WHEN_REQUIRED",
-  responseChecksumValidation: "WHEN_REQUIRED",
 });
 
 export const R2_BUCKET_NAME_VALUE = bucketName;
@@ -92,6 +90,37 @@ function sanitizeSlug(slug?: string) {
   );
 }
 
+function sanitizeMetadata(
+  metadata?: Record<string, string>
+): Record<string, string> | undefined {
+  if (!metadata) return undefined;
+
+  const entries = Object.entries(metadata)
+    .filter(
+      ([key, value]) =>
+        typeof key === "string" &&
+        key.trim() &&
+        typeof value === "string" &&
+        value.trim()
+    )
+    .map(([key, value]) => [
+      key
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-+|-+$/g, ""),
+      value
+        .normalize("NFKD")
+        .replace(/[^\x20-\x7E]+/g, "")
+        .trim()
+        .slice(0, 200),
+    ] as const)
+    .filter(([key, value]) => key && value);
+
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
 export function buildR2Key(params: {
   folder?: string;
   slug?: string;
@@ -138,7 +167,7 @@ export async function createMultipartUpload(params: {
     Bucket: bucketName,
     Key: params.key,
     ContentType: params.contentType,
-    Metadata: params.metadata,
+    Metadata: sanitizeMetadata(params.metadata),
   });
 
   const response = await r2Client.send(command);
@@ -191,10 +220,11 @@ export async function completeMultipartUpload(params: {
       (part) =>
         part &&
         typeof part.ETag === "string" &&
+        part.ETag.trim() &&
         Number.isInteger(part.PartNumber)
     )
     .map((part) => ({
-      ETag: part.ETag.replace(/^"+|"+$/g, ""),
+      ETag: part.ETag.trim(),
       PartNumber: part.PartNumber,
     }))
     .sort((a, b) => a.PartNumber - b.PartNumber);
