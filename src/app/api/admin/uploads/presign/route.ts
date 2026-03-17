@@ -15,7 +15,7 @@ const ALLOWED_IMAGE_TYPES = [
   "image/png",
   "image/webp",
   "image/gif",
-];
+] as const;
 
 const ALLOWED_FILE_TYPES = [
   "application/zip",
@@ -23,12 +23,23 @@ const ALLOWED_FILE_TYPES = [
   "application/x-zip",
   "application/octet-stream",
   "application/pdf",
-];
+] as const;
 
 const MAX_SINGLE_UPLOAD_SIZE = 500 * 1024 * 1024; // 500 MB
 
-function isValidFolder(folder: string) {
+function isValidFolder(folder: string): folder is "releases" | "media" | "avatars" {
   return ["releases", "media", "avatars"].includes(folder);
+}
+
+function sanitizeSlug(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^\w-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "") || "general"
+  );
 }
 
 export async function POST(request: Request) {
@@ -50,14 +61,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
 
-    const fileName = String(body?.fileName ?? "").trim();
-    const fileType = String(body?.fileType ?? "").trim();
-    const folder = String(body?.folder ?? "uploads").trim();
-    const slug = String(body?.slug ?? "general").trim() || "general";
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        { error: "Ungültiger Request-Body." },
+        { status: 400 }
+      );
+    }
 
-    const rawFileSize = body?.fileSize;
+    const fileName = String(body.fileName ?? "").trim();
+    const fileType = String(body.fileType ?? "").trim();
+    const folderRaw = String(body.folder ?? "").trim();
+    const slug = sanitizeSlug(String(body.slug ?? "general"));
+
+    const rawFileSize = body.fileSize;
     const fileSize =
       typeof rawFileSize === "number"
         ? rawFileSize
@@ -66,21 +84,29 @@ export async function POST(request: Request) {
     console.log("UPLOAD PRESIGN DEBUG", {
       fileName,
       fileType,
-      folder,
+      folder: folderRaw,
       slug,
       rawFileSize,
       parsedFileSize: fileSize,
       maxSize: MAX_SINGLE_UPLOAD_SIZE,
+      userId: user.id,
     });
 
-    if (!fileName || !fileType) {
+    if (!fileName) {
       return NextResponse.json(
-        { error: "Dateiname oder Dateityp fehlt." },
+        { error: "Dateiname fehlt." },
         { status: 400 }
       );
     }
 
-    if (!isValidFolder(folder)) {
+    if (!fileType) {
+      return NextResponse.json(
+        { error: "Dateityp fehlt." },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidFolder(folderRaw)) {
       return NextResponse.json(
         { error: "Ungültiger Upload-Ordner." },
         { status: 400 }
@@ -88,11 +114,6 @@ export async function POST(request: Request) {
     }
 
     if (!Number.isFinite(fileSize) || fileSize <= 0) {
-      console.log("INVALID FILE SIZE", {
-        rawFileSize,
-        parsedFileSize: fileSize,
-      });
-
       return NextResponse.json(
         { error: "Ungültige Dateigröße." },
         { status: 400 }
@@ -110,9 +131,9 @@ export async function POST(request: Request) {
     }
 
     const allowedTypes =
-      folder === "media" ? ALLOWED_IMAGE_TYPES : ALLOWED_FILE_TYPES;
+      folderRaw === "media" ? ALLOWED_IMAGE_TYPES : ALLOWED_FILE_TYPES;
 
-    if (!allowedTypes.includes(fileType)) {
+    if (!allowedTypes.includes(fileType as (typeof allowedTypes)[number])) {
       return NextResponse.json(
         { error: `Dateityp nicht erlaubt: ${fileType}` },
         { status: 400 }
@@ -120,7 +141,7 @@ export async function POST(request: Request) {
     }
 
     const key = buildR2Key({
-      folder,
+      folder: folderRaw,
       slug,
       fileName,
     });
@@ -134,13 +155,13 @@ export async function POST(request: Request) {
     console.log("UPLOAD PRESIGN SUCCESS", {
       key,
       fileType,
-      folder,
+      folder: folderRaw,
       slug,
       hasUploadUrl: Boolean(result?.uploadUrl),
       hasPublicUrl: Boolean(result?.publicUrl),
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, { status: 200 });
   } catch (error) {
     console.error("Presign upload error:", error);
 
