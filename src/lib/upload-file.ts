@@ -10,6 +10,21 @@ type PresignErrorResponse = {
 
 const MAX_SINGLE_UPLOAD_SIZE = 500 * 1024 * 1024; // 500 MB
 
+function isPresignResponse(
+  value: PresignResponse | PresignErrorResponse | null
+): value is PresignResponse {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "uploadUrl" in value &&
+      "publicUrl" in value &&
+      "key" in value &&
+      typeof value.uploadUrl === "string" &&
+      typeof value.publicUrl === "string" &&
+      typeof value.key === "string"
+  );
+}
+
 export async function uploadFileToR2(params: {
   file: File;
   folder: "releases" | "media" | "avatars";
@@ -27,8 +42,13 @@ export async function uploadFileToR2(params: {
     throw new Error("Keine Datei ausgewählt.");
   }
 
-  if (!params.slug?.trim()) {
+  const cleanSlug = params.slug?.trim();
+  if (!cleanSlug) {
     throw new Error("Slug fehlt für den Upload.");
+  }
+
+  if (params.file.size <= 0) {
+    throw new Error("Die Datei ist leer.");
   }
 
   if (params.file.size > MAX_SINGLE_UPLOAD_SIZE) {
@@ -50,7 +70,7 @@ export async function uploadFileToR2(params: {
       fileName: params.file.name,
       fileType,
       folder: params.folder,
-      slug: params.slug,
+      slug: cleanSlug,
       fileSize: params.file.size,
     }),
   });
@@ -63,13 +83,7 @@ export async function uploadFileToR2(params: {
   console.log("presignResponse status", presignResponse.status);
   console.log("presignData", presignData);
 
-  if (
-    !presignResponse.ok ||
-    !presignData ||
-    !("uploadUrl" in presignData) ||
-    !presignData.uploadUrl ||
-    !presignData.publicUrl
-  ) {
+  if (!presignResponse.ok || !isPresignResponse(presignData)) {
     const errorMessage =
       presignData && "error" in presignData && presignData.error
         ? presignData.error
