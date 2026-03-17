@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 import { ArrowLeft, ImageIcon, Save, Upload } from "lucide-react";
 
-import { uploadFileLarge } from "@/lib/upload-file-large";
+import { uploadFileMultipart } from "@/lib/upload-file-multipart";
 
 type ReleaseFormData = {
   id: string;
@@ -48,6 +48,7 @@ const initialUploadState: UploadState = {
   error: null,
 };
 
+const MAX_SIMPLE_UPLOAD_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024; // 20 MB
 const MAX_RELEASE_UPLOAD_SIZE = 30 * 1024 * 1024 * 1024; // 30 GB
 
@@ -113,10 +114,21 @@ function getReleaseMimeType(file: File) {
 
   const lowerName = file.name.toLowerCase();
 
-  if (lowerName.endsWith(".zip")) return "application/zip";
-  if (lowerName.endsWith(".pdf")) return "application/pdf";
-  if (lowerName.endsWith(".7z")) return "application/x-7z-compressed";
-  if (lowerName.endsWith(".rar")) return "application/x-rar-compressed";
+  if (lowerName.endsWith(".zip")) {
+    return "application/zip";
+  }
+
+  if (lowerName.endsWith(".pdf")) {
+    return "application/pdf";
+  }
+
+  if (lowerName.endsWith(".7z")) {
+    return "application/x-7z-compressed";
+  }
+
+  if (lowerName.endsWith(".rar")) {
+    return "application/x-rar-compressed";
+  }
 
   return "application/octet-stream";
 }
@@ -327,6 +339,44 @@ async function uploadImageWithProgress(args: {
   throw lastError ?? new Error("Bild-Upload fehlgeschlagen.");
 }
 
+function FileCard({
+  fileName,
+  fileSize,
+}: {
+  fileName: string;
+  fileSize: number;
+}) {
+  return (
+    <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-zinc-300">
+      <div className="font-medium text-white break-all">{fileName}</div>
+      <div className="mt-1 text-zinc-500">{formatBytes(fileSize)}</div>
+    </div>
+  );
+}
+
+function ProgressBlock({
+  label,
+  progress,
+}: {
+  label: string;
+  progress: number;
+}) {
+  return (
+    <div className="mt-3">
+      <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
+        <span>{label}</span>
+        <span>{progress}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-[#6c5ce7] transition-all"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function EditReleaseForm({ release }: Props) {
   const router = useRouter();
 
@@ -443,34 +493,89 @@ export default function EditReleaseForm({ release }: Props) {
     });
 
     try {
-      const uploaded = await uploadFileLarge(file, {
-        folder: "releases",
-        slug: effectiveSlug,
-        kind: "release",
-        parallel: 4,
-        partSize: 100 * 1024 * 1024,
-        maxRetries: 3,
-        onProgress(progress) {
-          setReleaseUpload((prev) => ({
-            ...prev,
-            isUploading: true,
-            progress,
-            fileName: file.name,
-            error: null,
-          }));
-        },
-      });
+      let uploadedUrl: string;
+
+      if (file.size > MAX_SIMPLE_UPLOAD_SIZE) {
+        const uploaded = await uploadFileMultipart({
+          file,
+          slug: effectiveSlug,
+          kind: "release",
+          onProgress(progress) {
+            setReleaseUpload((prev) => ({
+              ...prev,
+              isUploading: true,
+              progress,
+              fileName: file.name,
+              error: null,
+            }));
+          },
+        });
+
+        uploadedUrl = uploaded.publicUrl;
+      } else {
+        const fileType = getReleaseMimeType(file);
+
+        const prepareResponse = await fetchJsonWithTimeout(
+          "/api/admin/uploads/presign",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              fileName: file.name,
+              fileType,
+              folder: "releases",
+              slug: effectiveSlug,
+              fileSize: file.size,
+            }),
+          },
+          PRESIGN_TIMEOUT_MS
+        );
+
+        const prepareData = (await prepareResponse.json().catch(() => null)) as
+          | PresignResponse
+          | null;
+
+        if (
+          !prepareResponse.ok ||
+          !prepareData?.uploadUrl ||
+          !prepareData.publicUrl
+        ) {
+          throw new Error(
+            prepareData?.error || "Release-Upload konnte nicht vorbereitet werden."
+          );
+        }
+
+        await uploadViaXhrWithTimeout({
+          uploadUrl: prepareData.uploadUrl,
+          file,
+          fileType,
+          timeoutMs: UPLOAD_TIMEOUT_MS,
+          onProgress(progress) {
+            setReleaseUpload((prev) => ({
+              ...prev,
+              isUploading: true,
+              progress,
+              fileName: file.name,
+              error: null,
+            }));
+          },
+        });
+
+        uploadedUrl = prepareData.publicUrl;
+      }
 
       setReleaseUpload({
         isUploading: false,
         progress: 100,
         fileName: file.name,
-        uploadedUrl: uploaded.publicUrl,
+        uploadedUrl,
         error: null,
       });
 
-      setCurrentFileUrl(uploaded.publicUrl);
-      return uploaded.publicUrl;
+      setCurrentFileUrl(uploadedUrl);
+      return uploadedUrl;
     } catch (error) {
       const message =
         error instanceof Error
@@ -647,7 +752,7 @@ export default function EditReleaseForm({ release }: Props) {
         <div>
           <label
             htmlFor="title"
-            className="mb-2 block text-sm font-medium text-white/75"
+            className="mb-2 block text-sm font-medium text-zinc-300"
           >
             Titel
           </label>
@@ -659,14 +764,14 @@ export default function EditReleaseForm({ release }: Props) {
             required
             placeholder="z. B. ArcadiaX"
             disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
 
         <div>
           <label
             htmlFor="version"
-            className="mb-2 block text-sm font-medium text-white/75"
+            className="mb-2 block text-sm font-medium text-zinc-300"
           >
             Version
           </label>
@@ -678,7 +783,7 @@ export default function EditReleaseForm({ release }: Props) {
             required
             placeholder="z. B. 1.0.0"
             disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
       </div>
@@ -687,7 +792,7 @@ export default function EditReleaseForm({ release }: Props) {
         <div>
           <label
             htmlFor="slug"
-            className="mb-2 block text-sm font-medium text-white/75"
+            className="mb-2 block text-sm font-medium text-zinc-300"
           >
             Slug
           </label>
@@ -698,12 +803,12 @@ export default function EditReleaseForm({ release }: Props) {
             onChange={(event) => setSlug(event.target.value)}
             placeholder="z. B. arcadiax"
             disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
           />
-          <p className="mt-2 text-xs text-white/45">
+          <p className="mt-2 text-xs text-zinc-500">
             Optional. Wird für die öffentliche URL verwendet.
           </p>
-          <p className="mt-1 text-xs text-[#9d8dff]/80">
+          <p className="mt-1 text-xs text-[#8f84ff]">
             Aktueller Slug: <span className="font-medium">{effectiveSlug}</span>
           </p>
         </div>
@@ -711,7 +816,7 @@ export default function EditReleaseForm({ release }: Props) {
         <div>
           <label
             htmlFor="status"
-            className="mb-2 block text-sm font-medium text-white/75"
+            className="mb-2 block text-sm font-medium text-zinc-300"
           >
             Status
           </label>
@@ -723,7 +828,7 @@ export default function EditReleaseForm({ release }: Props) {
               setStatus(event.target.value as "DRAFT" | "PUBLISHED")
             }
             disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <option value="DRAFT">DRAFT</option>
             <option value="PUBLISHED">PUBLISHED</option>
@@ -734,7 +839,7 @@ export default function EditReleaseForm({ release }: Props) {
       <div>
         <label
           htmlFor="description"
-          className="mb-2 block text-sm font-medium text-white/75"
+          className="mb-2 block text-sm font-medium text-zinc-300"
         >
           Beschreibung
         </label>
@@ -746,14 +851,14 @@ export default function EditReleaseForm({ release }: Props) {
           rows={7}
           placeholder="Beschreibe das Release, Funktionen, Änderungen oder wichtige Hinweise..."
           disabled={anyBusy}
-          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
         />
       </div>
 
       <div>
         <label
           htmlFor="changelog"
-          className="mb-2 block text-sm font-medium text-white/75"
+          className="mb-2 block text-sm font-medium text-zinc-300"
         >
           Changelog
         </label>
@@ -765,17 +870,17 @@ export default function EditReleaseForm({ release }: Props) {
           rows={6}
           placeholder="Was hat sich geändert?"
           disabled={anyBusy}
-          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#6c5ce7]/50 focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
         />
       </div>
 
-      <div className="grid gap-5">
+      <div className="grid gap-5 md:grid-cols-2">
         <div>
           <label
             htmlFor="imageFile"
-            className="mb-2 flex items-center gap-2 text-sm font-medium text-white/75"
+            className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300"
           >
-            <ImageIcon className="h-4 w-4 text-[#9d8dff]" />
+            <ImageIcon className="h-4 w-4 text-[#8f84ff]" />
             Neues Bild hochladen
           </label>
           <input
@@ -784,34 +889,16 @@ export default function EditReleaseForm({ release }: Props) {
             accept="image/jpeg,image/png,image/webp,image/gif"
             onChange={handleImageFileChange}
             disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
           />
-          <p className="mt-2 text-xs text-white/45">
+          <p className="mt-2 text-xs text-zinc-500">
             Optional. Wenn du keine Datei auswählst, bleibt das aktuelle Bild erhalten.
           </p>
 
-          {imageFile ? (
-            <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/75">
-              <div className="font-medium text-white">{imageFile.name}</div>
-              <div className="mt-1 text-white/45">
-                {formatBytes(imageFile.size)}
-              </div>
-            </div>
-          ) : null}
+          {imageFile ? <FileCard fileName={imageFile.name} fileSize={imageFile.size} /> : null}
 
           {imageUpload.isUploading ? (
-            <div className="mt-3">
-              <div className="mb-2 flex items-center justify-between text-xs text-white/60">
-                <span>Bild-Upload läuft...</span>
-                <span>{imageUpload.progress}%</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full bg-[#6c5ce7] transition-all"
-                  style={{ width: `${imageUpload.progress}%` }}
-                />
-              </div>
-            </div>
+            <ProgressBlock label="Bild-Upload läuft..." progress={imageUpload.progress} />
           ) : null}
 
           {imageUpload.uploadedUrl ? (
@@ -828,9 +915,9 @@ export default function EditReleaseForm({ release }: Props) {
         <div>
           <label
             htmlFor="releaseFile"
-            className="mb-2 flex items-center gap-2 text-sm font-medium text-white/75"
+            className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300"
           >
-            <Upload className="h-4 w-4 text-[#9d8dff]" />
+            <Upload className="h-4 w-4 text-[#8f84ff]" />
             Neue Release-Datei hochladen
           </label>
           <input
@@ -839,34 +926,25 @@ export default function EditReleaseForm({ release }: Props) {
             accept=".zip,.pdf,.7z,.rar,application/zip,application/x-zip-compressed,application/x-zip,application/pdf,application/x-7z-compressed,application/x-rar-compressed,application/octet-stream"
             onChange={handleReleaseFileChange}
             disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
           />
-          <p className="mt-2 text-xs text-white/45">
+          <p className="mt-2 text-xs text-zinc-500">
             Optional. Wenn du keine Datei auswählst, bleibt die aktuelle Release-Datei erhalten.
           </p>
 
           {releaseFile ? (
-            <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/75">
-              <div className="font-medium text-white">{releaseFile.name}</div>
-              <div className="mt-1 text-white/45">
-                {formatBytes(releaseFile.size)}
-              </div>
-            </div>
+            <FileCard fileName={releaseFile.name} fileSize={releaseFile.size} />
           ) : null}
 
           {releaseUpload.isUploading ? (
-            <div className="mt-3">
-              <div className="mb-2 flex items-center justify-between text-xs text-white/60">
-                <span>Release-Datei-Upload läuft...</span>
-                <span>{releaseUpload.progress}%</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full bg-[#6c5ce7] transition-all"
-                  style={{ width: `${releaseUpload.progress}%` }}
-                />
-              </div>
-            </div>
+            <ProgressBlock
+              label={
+                releaseFile && releaseFile.size > MAX_SIMPLE_UPLOAD_SIZE
+                  ? "Multipart-Upload läuft..."
+                  : "Datei-Upload läuft..."
+              }
+              progress={releaseUpload.progress}
+            />
           ) : null}
 
           {releaseUpload.uploadedUrl ? (
@@ -891,7 +969,7 @@ export default function EditReleaseForm({ release }: Props) {
         <button
           type="submit"
           disabled={anyBusy}
-          className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Save className="h-4 w-4" />
           <span>{isSubmitting ? "Speichern..." : "Änderungen speichern"}</span>
@@ -899,7 +977,7 @@ export default function EditReleaseForm({ release }: Props) {
 
         <Link
           href="/dashboard/releases"
-          className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-[#6c5ce7]/40 hover:text-white"
+          className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
         >
           <ArrowLeft className="h-4 w-4" />
           <span>Abbrechen</span>
