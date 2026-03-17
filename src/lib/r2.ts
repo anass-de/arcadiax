@@ -38,6 +38,8 @@ export const r2Client = new S3Client({
     accessKeyId,
     secretAccessKey,
   },
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
 });
 
 function sanitizeFileName(fileName: string) {
@@ -71,9 +73,8 @@ export function buildR2Key(params: {
   slug?: string;
   fileName: string;
 }) {
-  const folder = (params.folder ?? "uploads")
-    .trim()
-    .replace(/^\/+|\/+$/g, "") || "uploads";
+  const folder =
+    (params.folder ?? "uploads").trim().replace(/^\/+|\/+$/g, "") || "uploads";
 
   const slug =
     (params.slug ?? "general")
@@ -97,6 +98,7 @@ export async function createPresignedUploadUrl(params: {
   const command = new PutObjectCommand({
     Bucket: bucketName,
     Key: params.key,
+    ContentType: params.contentType,
   });
 
   const uploadUrl = await getSignedUrl(r2Client, command, {
