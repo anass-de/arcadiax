@@ -15,6 +15,7 @@ function assertEnv(value: string | undefined, name: string) {
   if (!value || !value.trim()) {
     throw new Error(`Missing required environment variable: ${name}`);
   }
+
   return value.trim();
 }
 
@@ -98,7 +99,6 @@ export async function createPresignedUploadUrl(params: {
   const command = new PutObjectCommand({
     Bucket: bucketName,
     Key: params.key,
-    ContentType: params.contentType,
   });
 
   const uploadUrl = await getSignedUrl(r2Client, command, {
