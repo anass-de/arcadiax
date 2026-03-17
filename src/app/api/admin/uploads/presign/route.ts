@@ -130,10 +130,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const allowedTypes =
+    const allowedTypes: readonly string[] =
       folderRaw === "media" ? ALLOWED_IMAGE_TYPES : ALLOWED_FILE_TYPES;
 
-    if (!allowedTypes.includes(fileType as (typeof allowedTypes)[number])) {
+    if (!allowedTypes.includes(fileType)) {
       return NextResponse.json(
         { error: `Dateityp nicht erlaubt: ${fileType}` },
         { status: 400 }
