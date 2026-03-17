@@ -44,7 +44,9 @@ async function requireAdmin() {
     return { session: null, response: jsonError("Nicht eingeloggt.", 401) };
   }
 
-  if ((session.user as { role?: string | null }).role !== "ADMIN") {
+  const role = (session.user as { role?: string | null }).role ?? null;
+
+  if (role !== "ADMIN") {
     return { session: null, response: jsonError("Kein Zugriff.", 403) };
   }
 
@@ -75,13 +77,13 @@ function revalidateReleasePaths(params: {
 
 export async function GET(
   _req: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const auth = await requireAdmin();
     if (auth.response) return auth.response;
 
-    const { id } = context.params;
+    const { id } = await context.params;
 
     const release = await prisma.release.findUnique({
       where: { id },
@@ -135,13 +137,13 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const auth = await requireAdmin();
     if (auth.response) return auth.response;
 
-    const { id } = context.params;
+    const { id } = await context.params;
     const body = await req.json().catch(() => null);
 
     if (!body || typeof body !== "object") {
@@ -289,7 +291,11 @@ export async function PATCH(
       },
     });
 
-    if (body.fileUrl !== undefined && oldFileUrl && oldFileUrl !== updated.fileUrl) {
+    if (
+      body.fileUrl !== undefined &&
+      oldFileUrl &&
+      oldFileUrl !== updated.fileUrl
+    ) {
       try {
         await deleteR2ObjectsFromUrls([oldFileUrl]);
       } catch (error) {
@@ -327,13 +333,13 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const auth = await requireAdmin();
     if (auth.response) return auth.response;
 
-    const { id } = context.params;
+    const { id } = await context.params;
 
     const release = await prisma.release.findUnique({
       where: { id },
