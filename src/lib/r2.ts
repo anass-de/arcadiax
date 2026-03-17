@@ -38,9 +38,6 @@ export const r2Client = new S3Client({
     accessKeyId,
     secretAccessKey,
   },
-
-  // Für R2 stabiler bei presigned uploads
-  forcePathStyle: true,
   requestChecksumCalculation: "WHEN_REQUIRED",
   responseChecksumValidation: "WHEN_REQUIRED",
 });

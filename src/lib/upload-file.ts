@@ -66,6 +66,7 @@ export async function uploadFileToR2(params: {
     headers: {
       "Content-Type": "application/json",
     },
+    cache: "no-store",
     body: JSON.stringify({
       fileName: params.file.name,
       fileType,
