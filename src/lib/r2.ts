@@ -26,7 +26,6 @@ const secretAccessKey = assertEnv(
   "R2_SECRET_ACCESS_KEY"
 );
 const bucketName = assertEnv(R2_BUCKET_NAME, "R2_BUCKET_NAME");
-
 const publicBaseUrl = assertEnv(
   R2_PUBLIC_BASE_URL,
   "R2_PUBLIC_BASE_URL"
@@ -39,6 +38,9 @@ export const r2Client = new S3Client({
     accessKeyId,
     secretAccessKey,
   },
+
+  // Für R2 stabiler bei presigned uploads
+  forcePathStyle: true,
   requestChecksumCalculation: "WHEN_REQUIRED",
   responseChecksumValidation: "WHEN_REQUIRED",
 });
@@ -99,17 +101,16 @@ export async function createPresignedUploadUrl(params: {
   const command = new PutObjectCommand({
     Bucket: bucketName,
     Key: params.key,
+    ContentType: params.contentType,
   });
 
   const uploadUrl = await getSignedUrl(r2Client, command, {
     expiresIn: params.expiresIn ?? 3600,
   });
 
-  const publicUrl = `${publicBaseUrl}/${params.key}`;
-
   return {
     uploadUrl,
-    publicUrl,
+    publicUrl: `${publicBaseUrl}/${params.key}`,
     key: params.key,
   };
 }
