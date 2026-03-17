@@ -26,7 +26,6 @@ const secretAccessKey = assertEnv(
   "R2_SECRET_ACCESS_KEY"
 );
 const bucketName = assertEnv(R2_BUCKET_NAME, "R2_BUCKET_NAME");
-
 const publicBaseUrl = assertEnv(
   R2_PUBLIC_BASE_URL,
   "R2_PUBLIC_BASE_URL"
@@ -39,15 +38,12 @@ export const r2Client = new S3Client({
     accessKeyId,
     secretAccessKey,
   },
-
-  // wichtig für R2
   requestChecksumCalculation: "WHEN_REQUIRED",
   responseChecksumValidation: "WHEN_REQUIRED",
 });
 
 function sanitizeFileName(fileName: string) {
   const trimmed = fileName.trim() || "file";
-
   const parts = trimmed.split(".");
   const extension = parts.length > 1 ? parts.pop() : "";
   const baseName = parts.join(".") || "file";
@@ -78,9 +74,7 @@ export function buildR2Key(params: {
   fileName: string;
 }) {
   const folder =
-    (params.folder ?? "uploads")
-      .trim()
-      .replace(/^\/+|\/+$/g, "") || "uploads";
+    (params.folder ?? "uploads").trim().replace(/^\/+|\/+$/g, "") || "uploads";
 
   const slug =
     (params.slug ?? "general")
@@ -91,7 +85,6 @@ export function buildR2Key(params: {
       .replace(/^-+|-+$/g, "") || "general";
 
   const safeFileName = sanitizeFileName(params.fileName);
-
   const timestamp = Date.now();
 
   return `${folder}/${slug}/${timestamp}-${safeFileName}`;
@@ -102,13 +95,10 @@ export async function createPresignedUploadUrl(params: {
   contentType: string;
   expiresIn?: number;
 }) {
-  // WICHTIG:
-  // KEIN ContentType hier setzen!
-  // sonst schlägt Browser PUT wegen SignedHeaders fehl
-
   const command = new PutObjectCommand({
     Bucket: bucketName,
     Key: params.key,
+    ContentType: params.contentType,
   });
 
   const uploadUrl = await getSignedUrl(r2Client, command, {
