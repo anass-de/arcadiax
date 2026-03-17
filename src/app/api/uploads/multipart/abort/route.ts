@@ -6,11 +6,13 @@ import { abortMultipartUpload } from "@/lib/r2";
 
 type SessionUser = {
   id?: string | null;
+  role?: string | null;
+  email?: string | null;
 };
 
 type AbortBody = {
-  key: string;
-  uploadId: string;
+  key?: string;
+  uploadId?: string;
 };
 
 export async function POST(request: Request) {
@@ -25,7 +27,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json()) as AbortBody;
+    if (user.role !== "ADMIN") {
+      return NextResponse.json(
+        { error: "Nur Admins dürfen Multipart-Uploads abbrechen." },
+        { status: 403 }
+      );
+    }
+
+    const body = (await request.json().catch(() => null)) as AbortBody | null;
 
     if (!body || typeof body !== "object") {
       return NextResponse.json(
@@ -34,21 +43,29 @@ export async function POST(request: Request) {
       );
     }
 
-    const { key, uploadId } = body;
+    const key = String(body.key ?? "").trim();
+    const uploadId = String(body.uploadId ?? "").trim();
 
-    if (!key?.trim() || !uploadId?.trim()) {
+    if (!key) {
       return NextResponse.json(
-        { error: "Ungültige Abort-Anfrage." },
+        { error: "Key fehlt." },
         { status: 400 }
       );
     }
 
-    await abortMultipartUpload({
+    if (!uploadId) {
+      return NextResponse.json(
+        { error: "UploadId fehlt." },
+        { status: 400 }
+      );
+    }
+
+    const result = await abortMultipartUpload({
       key,
       uploadId,
     });
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return NextResponse.json(result, { status: 200 });
   } catch (error) {
     console.error("multipart abort error:", error);
 

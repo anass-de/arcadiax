@@ -2,12 +2,49 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
-import { ImageIcon, Plus, Upload } from "lucide-react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { ImageIcon, Loader2, Plus, Upload, XCircle } from "lucide-react";
 
-import { uploadFileMultipart } from "@/lib/upload-file-multipart";
+type ReleaseStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
 
 type UploadKind = "image" | "release";
+
+type StartMultipartResponse = {
+  uploadId: string;
+  key: string;
+  publicUrl: string;
+  partSize: number;
+};
+
+type PresignPartResponse = {
+  uploadUrl: string;
+  partNumber: number;
+};
+
+type CompleteMultipartResponse = {
+  key: string;
+  publicUrl: string;
+  location?: string | null;
+  etag?: string | null;
+};
+
+type DirectUploadResponse = {
+  uploadUrl: string;
+  publicUrl: string;
+  key: string;
+};
+
+type UploadedPart = {
+  PartNumber: number;
+  ETag: string;
+};
 
 type UploadState = {
   isUploading: boolean;
@@ -15,13 +52,6 @@ type UploadState = {
   fileName: string | null;
   uploadedUrl: string | null;
   error: string | null;
-};
-
-type PresignResponse = {
-  uploadUrl?: string;
-  publicUrl?: string;
-  key?: string;
-  error?: string;
 };
 
 const initialUploadState: UploadState = {
@@ -32,7 +62,6 @@ const initialUploadState: UploadState = {
   error: null,
 };
 
-const MAX_SIMPLE_UPLOAD_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024; // 20 MB
 const MAX_RELEASE_UPLOAD_SIZE = 30 * 1024 * 1024 * 1024; // 30 GB
 
@@ -41,7 +70,7 @@ const ALLOWED_IMAGE_TYPES = [
   "image/png",
   "image/webp",
   "image/gif",
-];
+] as const;
 
 const ALLOWED_RELEASE_TYPES = [
   "application/zip",
@@ -50,13 +79,9 @@ const ALLOWED_RELEASE_TYPES = [
   "application/octet-stream",
   "application/pdf",
   "application/x-7z-compressed",
+  "application/vnd.rar",
   "application/x-rar-compressed",
-];
-
-const PRESIGN_TIMEOUT_MS = 20_000;
-const UPLOAD_TIMEOUT_MS = 5 * 60_000;
-const MAX_UPLOAD_RETRIES = 3;
-const RETRY_DELAY_MS = 1_500;
+] as const;
 
 function slugify(value: string) {
   return value
@@ -65,15 +90,11 @@ function slugify(value: string) {
     .trim()
     .toLowerCase()
     .replace(/[\s_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 120);
+    .replace(/^-+|-+$/g, "") || "general";
 }
 
 function formatBytes(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "0 B";
-  }
-
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
   let unitIndex = 0;
@@ -86,854 +107,805 @@ function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
-function wait(ms: number) {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
-function getReleaseMimeType(file: File) {
-  const rawType = file.type?.trim();
-  if (rawType) return rawType;
-
-  const lowerName = file.name.toLowerCase();
-
-  if (lowerName.endsWith(".zip")) {
-    return "application/zip";
-  }
-
-  if (lowerName.endsWith(".pdf")) {
-    return "application/pdf";
-  }
-
-  if (lowerName.endsWith(".7z")) {
-    return "application/x-7z-compressed";
-  }
-
-  if (lowerName.endsWith(".rar")) {
-    return "application/x-rar-compressed";
-  }
-
-  return "application/octet-stream";
-}
-
-function validateFile(file: File, kind: UploadKind) {
-  const fileType =
-    kind === "release" ? getReleaseMimeType(file) : file.type?.trim() || "";
-
-  if (!Number.isFinite(file.size) || file.size <= 0) {
-    return "Ungültige Datei.";
-  }
-
+function validateFile(kind: UploadKind, file: File) {
   if (kind === "image") {
-    if (!ALLOWED_IMAGE_TYPES.includes(fileType)) {
-      return "Nur JPG, PNG, WEBP oder GIF sind als Bild erlaubt.";
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type as (typeof ALLOWED_IMAGE_TYPES)[number])) {
+      return "Ungültiger Bildtyp. Erlaubt sind JPG, PNG, WEBP und GIF.";
     }
-
     if (file.size > MAX_IMAGE_UPLOAD_SIZE) {
-      return `Das Bild ist zu groß. Maximal ${formatBytes(
-        MAX_IMAGE_UPLOAD_SIZE
-      )} sind erlaubt.`;
+      return "Bild ist zu groß. Maximal 20 MB erlaubt.";
     }
-
     return null;
   }
 
-  if (!ALLOWED_RELEASE_TYPES.includes(fileType)) {
-    return "Nur ZIP, PDF, 7Z oder RAR sind als Release-Datei erlaubt.";
+  if (!ALLOWED_RELEASE_TYPES.includes(file.type as (typeof ALLOWED_RELEASE_TYPES)[number])) {
+    return `Ungültiger Release-Dateityp: ${file.type || "unbekannt"}`;
   }
 
   if (file.size > MAX_RELEASE_UPLOAD_SIZE) {
-    return `Die Datei ist zu groß. Maximal ${formatBytes(
-      MAX_RELEASE_UPLOAD_SIZE
-    )} sind erlaubt.`;
+    return "Release-Datei ist zu groß. Maximal 30 GB erlaubt.";
   }
 
   return null;
 }
 
-async function fetchJsonWithTimeout(
+async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const response = await fetch(input, init);
+
+  let data: unknown = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const error =
+      data &&
+      typeof data === "object" &&
+      "error" in data &&
+      typeof (data as { error?: unknown }).error === "string"
+        ? (data as { error: string }).error
+        : "Unbekannter Fehler.";
+
+    throw new Error(error);
+  }
+
+  return data as T;
+}
+
+async function fetchWithTimeout(
   input: RequestInfo | URL,
-  init: RequestInit,
-  timeoutMs: number
+  init: RequestInit = {},
+  timeoutMs = 60_000
 ) {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(input, {
+    return await fetch(input, {
       ...init,
       signal: controller.signal,
     });
-
-    return response;
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("Zeitüberschreitung beim Vorbereiten des Uploads.");
-    }
-
-    throw error;
   } finally {
-    window.clearTimeout(timeoutId);
+    window.clearTimeout(timeout);
   }
 }
 
-function uploadViaXhrWithTimeout(args: {
+async function uploadPartWithRetry(params: {
   uploadUrl: string;
-  file: File;
-  fileType: string;
-  timeoutMs: number;
-  onProgress: (progress: number) => void;
+  chunk: Blob;
+  retries?: number;
+  timeoutMs?: number;
 }) {
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+  const retries = params.retries ?? 3;
+  let lastError: unknown = null;
 
-    xhr.open("PUT", args.uploadUrl, true);
-    xhr.timeout = args.timeoutMs;
-    xhr.setRequestHeader("Content-Type", args.fileType);
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(
+        params.uploadUrl,
+        {
+          method: "PUT",
+          body: params.chunk,
+        },
+        params.timeoutMs ?? 120_000
+      );
 
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-      const progress = Math.round((event.loaded / event.total) * 100);
-      args.onProgress(progress);
-    };
+      if (!response.ok) {
+        throw new Error(`Part-Upload fehlgeschlagen (${response.status}).`);
+      }
 
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        args.onProgress(100);
-        resolve();
-      } else {
-        reject(
-          new Error(
-            `Upload fehlgeschlagen (${xhr.status}). Bitte versuche es erneut.`
-          )
+      const etag = response.headers.get("ETag");
+      if (!etag) {
+        throw new Error(
+          "ETag fehlt im Upload-Response. Prüfe R2-CORS (ExposeHeaders: ETag)."
         );
       }
-    };
 
-    xhr.onerror = () => {
-      reject(new Error("Netzwerkfehler beim Upload."));
-    };
+      return etag;
+    } catch (error) {
+      lastError = error;
 
-    xhr.onabort = () => {
-      reject(new Error("Upload wurde abgebrochen."));
-    };
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
+      }
+    }
+  }
 
-    xhr.ontimeout = () => {
-      reject(
-        new Error(
-          "Der Upload hat zu lange gedauert und wurde wegen Zeitüberschreitung beendet."
-        )
-      );
-    };
-
-    xhr.send(args.file);
-  });
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Part-Upload endgültig fehlgeschlagen.");
 }
 
-async function uploadImageWithProgress(args: {
-  file: File;
-  slug: string;
-  onProgress: (progress: number) => void;
-}) {
-  const fileType = args.file.type?.trim() || "application/octet-stream";
+type NewReleaseFormProps = {
+  createAction?: (formData: FormData) => Promise<void>;
+};
 
-  const prepareResponse = await fetchJsonWithTimeout(
-    "/api/admin/uploads/presign",
-    {
+export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
+  const router = useRouter();
+
+  const [title, setTitle] = useState("");
+  const [slug, setSlug] = useState("");
+  const [version, setVersion] = useState("1.0.0");
+  const [status, setStatus] = useState<ReleaseStatus>("PUBLISHED");
+  const [description, setDescription] = useState("");
+  const [changelog, setChangelog] = useState("");
+
+  const [imageUpload, setImageUpload] = useState<UploadState>(initialUploadState);
+  const [releaseUpload, setReleaseUpload] = useState<UploadState>(initialUploadState);
+
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [releaseFile, setReleaseFile] = useState<File | null>(null);
+
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const releaseInputRef = useRef<HTMLInputElement | null>(null);
+
+  const effectiveSlug = useMemo(() => slugify(slug || title), [slug, title]);
+
+  useEffect(() => {
+    if (!title && slug) {
+      setSlug("");
+    }
+  }, [title, slug]);
+
+  async function uploadImageDirect(file: File, currentSlug: string) {
+    const presign = await fetchJson<DirectUploadResponse>("/api/upload", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        fileName: args.file.name,
-        fileType,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
         folder: "media",
-        slug: args.slug,
-        fileSize: args.file.size,
+        slug: currentSlug,
       }),
-    },
-    PRESIGN_TIMEOUT_MS
-  );
+    });
 
-  const prepareData = (await prepareResponse.json().catch(() => null)) as
-    | PresignResponse
-    | null;
-
-  if (!prepareResponse.ok || !prepareData?.uploadUrl || !prepareData.publicUrl) {
-    throw new Error(
-      prepareData?.error || "Bild-Upload konnte nicht vorbereitet werden."
-    );
-  }
-
-  const uploadUrl = prepareData.uploadUrl;
-  const publicUrl = prepareData.publicUrl;
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt += 1) {
-    const cappedProgressStart =
-      MAX_UPLOAD_RETRIES > 1
-        ? Math.min(
-            90,
-            Math.max(
-              0,
-              Math.round(((attempt - 1) / MAX_UPLOAD_RETRIES) * 100)
-            )
-          )
-        : 0;
-
-    args.onProgress(cappedProgressStart);
-
-    try {
-      await uploadViaXhrWithTimeout({
-        uploadUrl,
-        file: args.file,
-        fileType,
-        timeoutMs: UPLOAD_TIMEOUT_MS,
-        onProgress(progress) {
-          const normalizedProgress =
-            MAX_UPLOAD_RETRIES > 1
-              ? Math.min(
-                  99,
-                  Math.round(
-                    ((attempt - 1 + progress / 100) / MAX_UPLOAD_RETRIES) * 100
-                  )
-                )
-              : progress;
-
-          args.onProgress(normalizedProgress);
+    const uploadResponse = await fetchWithTimeout(
+      presign.uploadUrl,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type,
         },
-      });
+        body: file,
+      },
+      120_000
+    );
 
-      args.onProgress(100);
-      return publicUrl;
-    } catch (error) {
-      lastError =
-        error instanceof Error
-          ? error
-          : new Error("Bild-Upload fehlgeschlagen. Bitte versuche es erneut.");
-
-      if (attempt < MAX_UPLOAD_RETRIES) {
-        await wait(RETRY_DELAY_MS);
-      }
+    if (!uploadResponse.ok) {
+      throw new Error(`Bild-Upload fehlgeschlagen (${uploadResponse.status}).`);
     }
+
+    return presign.publicUrl;
   }
 
-  throw lastError ?? new Error("Bild-Upload fehlgeschlagen.");
-}
-
-function FileCard({
-  fileName,
-  fileSize,
-}: {
-  fileName: string;
-  fileSize: number;
-}) {
-  return (
-    <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-zinc-300">
-      <div className="font-medium text-white break-all">{fileName}</div>
-      <div className="mt-1 text-zinc-500">{formatBytes(fileSize)}</div>
-    </div>
-  );
-}
-
-function ProgressBlock({
-  label,
-  progress,
-}: {
-  label: string;
-  progress: number;
-}) {
-  return (
-    <div className="mt-3">
-      <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
-        <span>{label}</span>
-        <span>{progress}%</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full bg-[#6c5ce7] transition-all"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-export default function NewReleaseForm() {
-  const router = useRouter();
-
-  const [title, setTitle] = useState("");
-  const [version, setVersion] = useState("");
-  const [slug, setSlug] = useState("");
-  const [status, setStatus] = useState<"DRAFT" | "PUBLISHED">("PUBLISHED");
-  const [description, setDescription] = useState("");
-  const [changelog, setChangelog] = useState("");
-
-  const [releaseFile, setReleaseFile] = useState<File | null>(null);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-
-  const [releaseUpload, setReleaseUpload] =
-    useState<UploadState>(initialUploadState);
-  const [imageUpload, setImageUpload] =
-    useState<UploadState>(initialUploadState);
-
-  const [formError, setFormError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const effectiveSlug = useMemo(() => {
-    const explicitSlug = slugify(slug);
-    if (explicitSlug) return explicitSlug;
-
-    const fromTitle = slugify(title);
-    if (fromTitle) return fromTitle;
-
-    return "release";
-  }, [slug, title]);
-
-  function handleReleaseFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    event.target.value = "";
-
-    if (!file) {
-      setReleaseFile(null);
-      setReleaseUpload(initialUploadState);
-      return;
-    }
-
-    const validationError = validateFile(file, "release");
-
-    if (validationError) {
-      setReleaseFile(null);
-      setReleaseUpload({
-        ...initialUploadState,
+  async function uploadReleaseMultipart(
+    file: File,
+    currentSlug: string,
+    onProgress: (progress: number) => void
+  ) {
+    const started = await fetchJson<StartMultipartResponse>("/api/upload/multipart", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        folder: "releases",
+        slug: currentSlug,
         fileName: file.name,
-        error: validationError,
-      });
-      setFormError(null);
-      return;
-    }
-
-    setReleaseFile(file);
-    setReleaseUpload({
-      ...initialUploadState,
-      fileName: file.name,
-      error: null,
+        fileSize: file.size,
+        contentType: file.type || "application/octet-stream",
+        kind: "release",
+      }),
     });
-    setFormError(null);
-  }
 
-  function handleImageFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    event.target.value = "";
-
-    if (!file) {
-      setImageFile(null);
-      setImageUpload(initialUploadState);
-      return;
-    }
-
-    const validationError = validateFile(file, "image");
-
-    if (validationError) {
-      setImageFile(null);
-      setImageUpload({
-        ...initialUploadState,
-        fileName: file.name,
-        error: validationError,
-      });
-      setFormError(null);
-      return;
-    }
-
-    setImageFile(file);
-    setImageUpload({
-      ...initialUploadState,
-      fileName: file.name,
-      error: null,
-    });
-    setFormError(null);
-  }
-
-  async function ensureUploadedRelease(file: File | null) {
-    if (!file) {
-      throw new Error("Bitte wähle eine Release-Datei aus.");
-    }
-
-    if (releaseUpload.uploadedUrl) {
-      return releaseUpload.uploadedUrl;
-    }
-
-    setReleaseUpload({
-      isUploading: true,
-      progress: 0,
-      fileName: file.name,
-      uploadedUrl: null,
-      error: null,
-    });
+    const partSize = Math.max(started.partSize || 10 * 1024 * 1024, 5 * 1024 * 1024);
+    const partCount = Math.ceil(file.size / partSize);
+    const uploadedParts: UploadedPart[] = [];
+    let uploadedBytes = 0;
 
     try {
-      let uploadedUrl: string;
+      for (let partNumber = 1; partNumber <= partCount; partNumber += 1) {
+        const start = (partNumber - 1) * partSize;
+        const end = Math.min(start + partSize, file.size);
+        const chunk = file.slice(start, end);
 
-      if (file.size > MAX_SIMPLE_UPLOAD_SIZE) {
-        const uploaded = await uploadFileMultipart({
-          file,
-          slug: effectiveSlug,
-          kind: "release",
-          onProgress(progress) {
-            setReleaseUpload((prev) => ({
-              ...prev,
-              isUploading: true,
-              progress,
-              fileName: file.name,
-              error: null,
-            }));
-          },
-        });
-
-        uploadedUrl = uploaded.publicUrl;
-      } else {
-        const fileType = getReleaseMimeType(file);
-
-        const prepareResponse = await fetchJsonWithTimeout(
-          "/api/admin/uploads/presign",
+        const presignedPart = await fetchJson<PresignPartResponse>(
+          "/api/upload/multipart/part",
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              fileName: file.name,
-              fileType,
-              folder: "releases",
-              slug: effectiveSlug,
-              fileSize: file.size,
+              key: started.key,
+              uploadId: started.uploadId,
+              partNumber,
             }),
-          },
-          PRESIGN_TIMEOUT_MS
+          }
         );
 
-        const prepareData = (await prepareResponse.json().catch(() => null)) as
-          | PresignResponse
-          | null;
-
-        if (
-          !prepareResponse.ok ||
-          !prepareData?.uploadUrl ||
-          !prepareData.publicUrl
-        ) {
-          throw new Error(
-            prepareData?.error || "Release-Upload konnte nicht vorbereitet werden."
-          );
-        }
-
-        await uploadViaXhrWithTimeout({
-          uploadUrl: prepareData.uploadUrl,
-          file,
-          fileType,
-          timeoutMs: UPLOAD_TIMEOUT_MS,
-          onProgress(progress) {
-            setReleaseUpload((prev) => ({
-              ...prev,
-              isUploading: true,
-              progress,
-              fileName: file.name,
-              error: null,
-            }));
-          },
+        const etag = await uploadPartWithRetry({
+          uploadUrl: presignedPart.uploadUrl,
+          chunk,
+          retries: 3,
+          timeoutMs: 120_000,
         });
 
-        uploadedUrl = prepareData.publicUrl;
+        uploadedParts.push({
+          PartNumber: partNumber,
+          ETag: etag,
+        });
+
+        uploadedBytes += chunk.size;
+        onProgress(Math.min(100, Math.round((uploadedBytes / file.size) * 100)));
       }
 
-      setReleaseUpload({
-        isUploading: false,
-        progress: 100,
-        fileName: file.name,
-        uploadedUrl,
-        error: null,
-      });
+      const completed = await fetchJson<CompleteMultipartResponse>(
+        "/api/upload/multipart/complete",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            key: started.key,
+            uploadId: started.uploadId,
+            parts: uploadedParts,
+          }),
+        }
+      );
 
-      return uploadedUrl;
+      return completed.publicUrl;
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Release-Upload fehlgeschlagen. Bitte versuche es erneut.";
+      try {
+        await fetch("/api/upload/multipart/abort", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            key: started.key,
+            uploadId: started.uploadId,
+          }),
+        });
+      } catch {
+        // ignore abort failure
+      }
 
-      setReleaseUpload({
+      throw error;
+    }
+  }
+
+  async function handleImageSelect(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    setImageUpload(initialUploadState);
+    setImageFile(null);
+
+    if (!file) return;
+
+    const error = validateFile("image", file);
+    if (error) {
+      setImageUpload({
         isUploading: false,
         progress: 0,
         fileName: file.name,
         uploadedUrl: null,
-        error: message,
+        error,
       });
-
-      throw new Error(message);
-    }
-  }
-
-  async function ensureUploadedImage(file: File | null) {
-    if (!file) {
-      return null;
+      return;
     }
 
-    if (imageUpload.uploadedUrl) {
-      return imageUpload.uploadedUrl;
-    }
-
+    setImageFile(file);
     setImageUpload({
-      isUploading: true,
+      isUploading: false,
       progress: 0,
       fileName: file.name,
       uploadedUrl: null,
       error: null,
     });
+  }
 
-    try {
-      const uploadedUrl = await uploadImageWithProgress({
-        file,
-        slug: effectiveSlug,
-        onProgress(progress) {
-          setImageUpload((prev) => ({
-            ...prev,
-            isUploading: true,
-            progress,
-            fileName: file.name,
-            error: null,
-          }));
-        },
-      });
+  async function handleReleaseSelect(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    setReleaseUpload(initialUploadState);
+    setReleaseFile(null);
 
-      setImageUpload({
-        isUploading: false,
-        progress: 100,
-        fileName: file.name,
-        uploadedUrl,
-        error: null,
-      });
+    if (!file) return;
 
-      return uploadedUrl;
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Bild-Upload fehlgeschlagen. Bitte versuche es erneut.";
-
-      setImageUpload({
+    const error = validateFile("release", file);
+    if (error) {
+      setReleaseUpload({
         isUploading: false,
         progress: 0,
         fileName: file.name,
         uploadedUrl: null,
-        error: message,
+        error,
       });
-
-      throw new Error(message);
+      return;
     }
+
+    setReleaseFile(file);
+    setReleaseUpload({
+      isUploading: false,
+      progress: 0,
+      fileName: file.name,
+      uploadedUrl: null,
+      error: null,
+    });
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitError(null);
 
-    if (isSubmitting) return;
-
-    setFormError(null);
-
-    const cleanTitle = title.trim();
-    const cleanVersion = version.trim();
-
-    if (!cleanTitle) {
-      setFormError("Titel darf nicht leer sein.");
+    if (!title.trim()) {
+      setSubmitError("Titel fehlt.");
       return;
     }
 
-    if (!cleanVersion) {
-      setFormError("Version darf nicht leer sein.");
+    if (!version.trim()) {
+      setSubmitError("Version fehlt.");
       return;
     }
 
     if (!releaseFile) {
-      setFormError("Bitte wähle eine Release-Datei aus.");
+      setSubmitError("Bitte eine Release-Datei auswählen.");
       return;
     }
 
-    const releaseValidationError = validateFile(releaseFile, "release");
-    if (releaseValidationError) {
-      setFormError(releaseValidationError);
-      return;
-    }
-
-    if (imageFile) {
-      const imageValidationError = validateFile(imageFile, "image");
-      if (imageValidationError) {
-        setFormError(imageValidationError);
-        return;
-      }
-    }
+    const currentSlug = effectiveSlug || "general";
 
     setIsSubmitting(true);
 
     try {
-      const fileUrl = await ensureUploadedRelease(releaseFile);
-      const imageUrl = await ensureUploadedImage(imageFile);
+      let imageUrl: string | null = imageUpload.uploadedUrl;
+      let releaseUrl: string | null = releaseUpload.uploadedUrl;
 
-      const response = await fetch("/api/admin/releases", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: cleanTitle,
-          version: cleanVersion,
-          slug: effectiveSlug,
-          description: description.trim() || null,
-          changelog: changelog.trim() || null,
-          status,
-          fileUrl,
-          fileName: releaseFile.name,
-          fileSize: releaseFile.size,
-          mimeType: getReleaseMimeType(releaseFile),
-          imageUrl,
-        }),
-      });
+      if (imageFile && !imageUrl) {
+        setImageUpload((prev) => ({
+          ...prev,
+          isUploading: true,
+          progress: 10,
+          error: null,
+        }));
 
-      const data = await response.json().catch(() => null);
+        imageUrl = await uploadImageDirect(imageFile, currentSlug);
 
-      if (!response.ok) {
-        throw new Error(data?.error || "Release konnte nicht erstellt werden.");
+        setImageUpload((prev) => ({
+          ...prev,
+          isUploading: false,
+          progress: 100,
+          uploadedUrl: imageUrl,
+          error: null,
+        }));
       }
 
-      router.push(
-        "/dashboard/releases/new?success=Release wurde erfolgreich erstellt."
-      );
+      if (!releaseUrl) {
+        setReleaseUpload((prev) => ({
+          ...prev,
+          isUploading: true,
+          progress: 1,
+          error: null,
+        }));
+
+        releaseUrl = await uploadReleaseMultipart(releaseFile, currentSlug, (progress) => {
+          setReleaseUpload((prev) => ({
+            ...prev,
+            isUploading: true,
+            progress,
+            error: null,
+          }));
+        });
+
+        setReleaseUpload((prev) => ({
+          ...prev,
+          isUploading: false,
+          progress: 100,
+          uploadedUrl: releaseUrl,
+          error: null,
+        }));
+      }
+
+      const formData = new FormData();
+      formData.set("title", title.trim());
+      formData.set("slug", currentSlug);
+      formData.set("version", version.trim());
+      formData.set("status", status);
+      formData.set("description", description.trim());
+      formData.set("changelog", changelog.trim());
+      formData.set("fileUrl", releaseUrl);
+      formData.set("imageUrl", imageUrl ?? "");
+
+      if (createAction) {
+        await createAction(formData);
+      } else {
+        const response = await fetch("/api/admin/releases", {
+          method: "POST",
+          body: formData,
+        });
+
+        let data: unknown = null;
+        try {
+          data = await response.json();
+        } catch {
+          data = null;
+        }
+
+        if (!response.ok) {
+          const message =
+            data &&
+            typeof data === "object" &&
+            "error" in data &&
+            typeof (data as { error?: unknown }).error === "string"
+              ? (data as { error: string }).error
+              : "Release konnte nicht erstellt werden.";
+
+          throw new Error(message);
+        }
+      }
+
+      router.push("/dashboard/releases");
       router.refresh();
     } catch (error) {
-      setFormError(
-        error instanceof Error
-          ? error.message
-          : "Beim Erstellen des Releases ist ein Fehler aufgetreten."
-      );
+      const message =
+        error instanceof Error ? error.message : "Upload oder Speichern fehlgeschlagen.";
+
+      setImageUpload((prev) => ({
+        ...prev,
+        isUploading: false,
+        error: prev.error ?? null,
+      }));
+      setReleaseUpload((prev) => ({
+        ...prev,
+        isUploading: false,
+        error: prev.error ?? null,
+      }));
+      setSubmitError(message);
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  const releaseBusy = releaseUpload.isUploading;
-  const imageBusy = imageUpload.isUploading;
-  const anyBusy = isSubmitting || releaseBusy || imageBusy;
+  function resetImage() {
+    setImageFile(null);
+    setImageUpload(initialUploadState);
+    if (imageInputRef.current) {
+      imageInputRef.current.value = "";
+    }
+  }
+
+  function resetRelease() {
+    setReleaseFile(null);
+    setReleaseUpload(initialUploadState);
+    if (releaseInputRef.current) {
+      releaseInputRef.current.value = "";
+    }
+  }
+
+  const isBusy =
+    isSubmitting || imageUpload.isUploading || releaseUpload.isUploading;
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-5">
-      <div className="grid gap-5 md:grid-cols-2">
-        <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-300">
-            Titel
-          </label>
-          <input
-            type="text"
-            name="title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="z. B. ArcadiaX"
-            required
-            disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-          />
-        </div>
+    <form onSubmit={handleSubmit} className="space-y-8">
+      <section className="rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+              <Plus className="h-3.5 w-3.5" />
+              Release Verwaltung
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-white">
+              Neues Release erstellen
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm text-white/65">
+              Erstelle ein neues Release und lade direkt die Release-Datei sowie optional ein Vorschaubild hoch.
+            </p>
+          </div>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-300">
-            Version
-          </label>
-          <input
-            type="text"
-            name="version"
-            value={version}
-            onChange={(event) => setVersion(event.target.value)}
-            placeholder="z. B. 1.0.0"
-            required
-            disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-          />
-        </div>
-      </div>
-
-      <div className="grid gap-5 md:grid-cols-2">
-        <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-300">
-            Slug
-          </label>
-          <input
-            type="text"
-            name="slug"
-            value={slug}
-            onChange={(event) => setSlug(event.target.value)}
-            placeholder="z. B. arcadiax"
-            disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-          />
-          <p className="mt-2 text-xs text-zinc-500">
-            Optional. Wenn leer, wird der Slug automatisch aus dem Titel erzeugt.
-          </p>
-          <p className="mt-1 text-xs text-[#8f84ff]">
-            Aktueller Slug: <span className="font-medium">{effectiveSlug}</span>
-          </p>
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-medium text-zinc-300">
-            Status
-          </label>
-          <select
-            name="status"
-            value={status}
-            onChange={(event) =>
-              setStatus(event.target.value as "DRAFT" | "PUBLISHED")
-            }
-            disabled={anyBusy}
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
+          <Link
+            href="/dashboard/releases"
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
           >
-            <option value="DRAFT">DRAFT</option>
-            <option value="PUBLISHED">PUBLISHED</option>
-          </select>
-        </div>
-      </div>
-
-      <div>
-        <label className="mb-2 block text-sm font-medium text-zinc-300">
-          Beschreibung
-        </label>
-        <textarea
-          name="description"
-          rows={5}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          placeholder="Beschreibe das Release, Funktionen, Änderungen oder Hinweise..."
-          disabled={anyBusy}
-          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-        />
-      </div>
-
-      <div>
-        <label className="mb-2 block text-sm font-medium text-zinc-300">
-          Changelog
-        </label>
-        <textarea
-          name="changelog"
-          rows={5}
-          value={changelog}
-          onChange={(event) => setChangelog(event.target.value)}
-          placeholder="Was hat sich geändert?"
-          disabled={anyBusy}
-          className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-[#6c5ce7]/40 focus:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
-        />
-      </div>
-
-      <div className="grid gap-5 md:grid-cols-2">
-        <div>
-          <label className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300">
-            <ImageIcon className="h-4 w-4 text-[#8f84ff]" />
-            Vorschaubild hochladen
-          </label>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            onChange={handleImageFileChange}
-            disabled={anyBusy}
-            className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
-          />
-          <p className="mt-2 text-xs text-zinc-500">
-            Optional. Erlaubt: JPG, PNG, WEBP, GIF. Maximal{" "}
-            {formatBytes(MAX_IMAGE_UPLOAD_SIZE)}.
-          </p>
-
-          {imageFile ? <FileCard fileName={imageFile.name} fileSize={imageFile.size} /> : null}
-
-          {imageUpload.isUploading ? (
-            <ProgressBlock label="Bild-Upload läuft..." progress={imageUpload.progress} />
-          ) : null}
-
-          {imageUpload.uploadedUrl ? (
-            <p className="mt-2 text-xs text-emerald-300">
-              Bild erfolgreich hochgeladen.
-            </p>
-          ) : null}
-
-          {imageUpload.error ? (
-            <p className="mt-2 text-xs text-red-300">{imageUpload.error}</p>
-          ) : null}
+            Zurück zur Übersicht
+          </Link>
         </div>
 
-        <div>
-          <label className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-300">
-            <Upload className="h-4 w-4 text-[#8f84ff]" />
-            Release-Datei hochladen
-          </label>
-          <input
-            type="file"
-            accept=".zip,.pdf,.7z,.rar,application/zip,application/x-zip-compressed,application/x-zip,application/pdf,application/x-7z-compressed,application/x-rar-compressed,application/octet-stream"
-            onChange={handleReleaseFileChange}
-            disabled={anyBusy}
-            className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
-          />
-          <p className="mt-2 text-xs text-zinc-500">
-            Pflichtfeld. Erlaubt: ZIP, PDF, 7Z oder RAR. Maximal{" "}
-            {formatBytes(MAX_RELEASE_UPLOAD_SIZE)}.
-          </p>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-white/85">
+                Titel
+              </label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="z. B. ArcadiaX"
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-violet-400/50"
+              />
+            </div>
 
-          {releaseFile ? (
-            <FileCard fileName={releaseFile.name} fileSize={releaseFile.size} />
-          ) : null}
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-white/85">
+                  Slug
+                </label>
+                <input
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value)}
+                  placeholder="optional"
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-violet-400/50"
+                />
+                <p className="mt-2 text-xs text-white/45">
+                  Aktueller Slug: <span className="text-violet-300">{effectiveSlug}</span>
+                </p>
+              </div>
 
-          {releaseUpload.isUploading ? (
-            <ProgressBlock
-              label={
-                releaseFile && releaseFile.size > MAX_SIMPLE_UPLOAD_SIZE
-                  ? "Multipart-Upload läuft..."
-                  : "Datei-Upload läuft..."
-              }
-              progress={releaseUpload.progress}
-            />
-          ) : null}
+              <div>
+                <label className="mb-2 block text-sm font-medium text-white/85">
+                  Version
+                </label>
+                <input
+                  value={version}
+                  onChange={(e) => setVersion(e.target.value)}
+                  placeholder="1.0.0"
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-violet-400/50"
+                />
+              </div>
+            </div>
 
-          {releaseUpload.uploadedUrl ? (
-            <p className="mt-2 text-xs text-emerald-300">
-              Release-Datei erfolgreich hochgeladen.
-            </p>
-          ) : null}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-white/85">
+                Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as ReleaseStatus)}
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition focus:border-violet-400/50"
+              >
+                <option value="DRAFT">DRAFT</option>
+                <option value="PUBLISHED">PUBLISHED</option>
+                <option value="ARCHIVED">ARCHIVED</option>
+              </select>
+            </div>
+          </div>
 
-          {releaseUpload.error ? (
-            <p className="mt-2 text-xs text-red-300">{releaseUpload.error}</p>
-          ) : null}
+          <div className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-white/85">
+                Beschreibung
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={6}
+                placeholder="Kurze Beschreibung des Releases"
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-violet-400/50"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-white/85">
+                Changelog
+              </label>
+              <textarea
+                value={changelog}
+                onChange={(e) => setChangelog(e.target.value)}
+                rows={6}
+                placeholder="Was ist neu?"
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-violet-400/50"
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {formError ? (
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-          {formError}
+      <section className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/10 p-2 text-cyan-300">
+              <ImageIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Vorschaubild hochladen</h2>
+              <p className="text-sm text-white/50">
+                Optional. JPG, PNG, WEBP, GIF. Maximal 20 MB.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500">
+                <Upload className="h-4 w-4" />
+                Datei auswählen
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.gif"
+                  className="hidden"
+                  onChange={handleImageSelect}
+                />
+              </label>
+
+              {imageFile ? (
+                <button
+                  type="button"
+                  onClick={resetImage}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
+                >
+                  <XCircle className="h-4 w-4" />
+                  Entfernen
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
+              <p className="text-sm text-white/85">
+                {imageFile ? imageFile.name : "Keine Datei ausgewählt"}
+              </p>
+              <p className="mt-1 text-xs text-white/45">
+                {imageFile ? formatBytes(imageFile.size) : "Optionaler Upload"}
+              </p>
+
+              {imageUpload.error ? (
+                <p className="mt-3 text-sm text-rose-400">{imageUpload.error}</p>
+              ) : null}
+
+              {imageUpload.uploadedUrl ? (
+                <p className="mt-3 text-sm text-emerald-400 break-all">
+                  Upload erfolgreich: {imageUpload.uploadedUrl}
+                </p>
+              ) : null}
+
+              {imageUpload.isUploading ? (
+                <div className="mt-4">
+                  <div className="mb-2 flex items-center justify-between text-xs text-white/55">
+                    <span>Upload läuft...</span>
+                    <span>{imageUpload.progress}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-cyan-400 transition-all"
+                      style={{ width: `${imageUpload.progress}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
-      ) : null}
 
-      <div className="flex flex-wrap gap-3 pt-2">
-        <button
-          type="submit"
-          disabled={anyBusy}
-          className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Plus className="h-4 w-4" />
-          <span>
-            {isSubmitting ? "Release wird erstellt..." : "Release erstellen"}
-          </span>
-        </button>
+        <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/10 p-2 text-violet-300">
+              <Upload className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Release-Datei hochladen</h2>
+              <p className="text-sm text-white/50">
+                Pflichtfeld. ZIP, PDF, 7Z oder RAR. Große Dateien per Multipart.
+              </p>
+            </div>
+          </div>
 
-        <Link
-          href="/dashboard/releases"
-          className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
-        >
-          Abbrechen
-        </Link>
-      </div>
+          <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500">
+                <Upload className="h-4 w-4" />
+                Datei auswählen
+                <input
+                  ref={releaseInputRef}
+                  type="file"
+                  accept=".zip,.pdf,.7z,.rar"
+                  className="hidden"
+                  onChange={handleReleaseSelect}
+                />
+              </label>
+
+              {releaseFile ? (
+                <button
+                  type="button"
+                  onClick={resetRelease}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
+                >
+                  <XCircle className="h-4 w-4" />
+                  Entfernen
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
+              <p className="text-sm text-white/85">
+                {releaseFile ? releaseFile.name : "Keine Datei ausgewählt"}
+              </p>
+              <p className="mt-1 text-xs text-white/45">
+                {releaseFile ? formatBytes(releaseFile.size) : "Pflicht-Upload"}
+              </p>
+
+              {releaseUpload.error ? (
+                <p className="mt-3 text-sm text-rose-400">{releaseUpload.error}</p>
+              ) : null}
+
+              {releaseUpload.uploadedUrl ? (
+                <p className="mt-3 break-all text-sm text-emerald-400">
+                  Upload erfolgreich: {releaseUpload.uploadedUrl}
+                </p>
+              ) : null}
+
+              {(releaseUpload.isUploading || releaseUpload.progress > 0) && !releaseUpload.error ? (
+                <div className="mt-4">
+                  <div className="mb-2 flex items-center justify-between text-xs text-white/55">
+                    <span>Multipart-Upload läuft...</span>
+                    <span>{releaseUpload.progress}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-violet-500 transition-all"
+                      style={{ width: `${releaseUpload.progress}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl">
+        <h2 className="text-lg font-semibold text-white">Hinweise</h2>
+        <div className="mt-4 grid gap-3 text-sm text-white/60 md:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+            Bild wird direkt als einzelner Upload gespeichert.
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+            Release-Dateien werden robust per Multipart zu R2 hochgeladen.
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+            Bei Fehlern wird der Multipart-Upload automatisch abgebrochen.
+          </div>
+        </div>
+
+        {submitError ? (
+          <div className="mt-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
+            {submitError}
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={isBusy}
+            className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isBusy ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Release wird erstellt...
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4" />
+                Release erstellen
+              </>
+            )}
+          </button>
+
+          <Link
+            href="/dashboard/releases"
+            className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
+          >
+            Abbrechen
+          </Link>
+        </div>
+      </section>
     </form>
   );
 }
