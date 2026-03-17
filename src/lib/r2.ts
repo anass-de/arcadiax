@@ -15,7 +15,6 @@ function assertEnv(value: string | undefined, name: string) {
   if (!value || !value.trim()) {
     throw new Error(`Missing required environment variable: ${name}`);
   }
-
   return value.trim();
 }
 
@@ -26,6 +25,7 @@ const secretAccessKey = assertEnv(
   "R2_SECRET_ACCESS_KEY"
 );
 const bucketName = assertEnv(R2_BUCKET_NAME, "R2_BUCKET_NAME");
+
 const publicBaseUrl = assertEnv(
   R2_PUBLIC_BASE_URL,
   "R2_PUBLIC_BASE_URL"
