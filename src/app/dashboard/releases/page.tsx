@@ -15,6 +15,7 @@ import {
 
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
+import { deleteR2ObjectsFromUrls } from "@/lib/r2";
 
 type SessionUser = {
   role?: "USER" | "ADMIN" | null;
@@ -181,6 +182,7 @@ export default async function DashboardReleasesPage() {
       },
       select: {
         id: true,
+        slug: true,
         status: true,
       },
     });
@@ -202,6 +204,12 @@ export default async function DashboardReleasesPage() {
     revalidatePath("/dashboard/releases");
     revalidatePath(`/dashboard/releases/${releaseId}/edit`);
     revalidatePath("/releases");
+
+    if (existing.slug?.trim()) {
+      revalidatePath(`/releases/${existing.slug}`);
+    } else {
+      revalidatePath(`/releases/${existing.id}`);
+    }
   }
 
   async function deleteReleaseAction(formData: FormData) {
@@ -227,6 +235,8 @@ export default async function DashboardReleasesPage() {
       select: {
         id: true,
         slug: true,
+        fileUrl: true,
+        imageUrl: true,
       },
     });
 
@@ -257,12 +267,20 @@ export default async function DashboardReleasesPage() {
       }),
     ]);
 
+    try {
+      await deleteR2ObjectsFromUrls([existing.fileUrl, existing.imageUrl]);
+    } catch (error) {
+      console.error("R2 cleanup failed after release delete:", error);
+    }
+
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/releases");
     revalidatePath("/releases");
 
     if (existing.slug?.trim()) {
       revalidatePath(`/releases/${existing.slug}`);
+    } else {
+      revalidatePath(`/releases/${existing.id}`);
     }
   }
 

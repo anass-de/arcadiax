@@ -16,13 +16,13 @@ import { authOptions } from "@/lib/auth";
 import EditReleaseForm from "@/components/releases/edit-release-form";
 
 type PageProps = {
-  params: Promise<{
+  params: {
     id: string;
-  }>;
-  searchParams?: Promise<{
+  };
+  searchParams?: {
     error?: string;
     success?: string;
-  }>;
+  };
 };
 
 type SessionUser = {
@@ -49,7 +49,7 @@ function getSessionUser(
 }
 
 function formatDateTime(date: Date) {
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -64,7 +64,7 @@ function normalizeMessage(value?: string | null) {
 }
 
 function getStatusLabel(status: "DRAFT" | "PUBLISHED") {
-  return status === "PUBLISHED" ? "Published" : "Draft";
+  return status === "PUBLISHED" ? "Veröffentlicht" : "Entwurf";
 }
 
 function getStatusClasses(status: "DRAFT" | "PUBLISHED") {
@@ -90,8 +90,8 @@ export default async function EditReleasePage({
     redirect("/");
   }
 
-  const { id } = await params;
-  const resolvedSearchParams = (await searchParams) ?? {};
+  const { id } = params;
+  const resolvedSearchParams = searchParams ?? {};
   const errorMessage = normalizeMessage(resolvedSearchParams.error);
   const successMessage = normalizeMessage(resolvedSearchParams.success);
 
@@ -135,7 +135,7 @@ export default async function EditReleasePage({
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-[#6c5ce7]/30 bg-[#6c5ce7]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-[#9d8dff]">
               <Shield className="h-4 w-4" />
-              Edit Release
+              Release bearbeiten
             </div>
 
             <div>
@@ -143,9 +143,9 @@ export default async function EditReleasePage({
                 {release.title}
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/70 sm:text-base">
-                Update the title, version, slug, status, and description. You
-                can also replace the current image and release file directly
-                from your computer.
+                Aktualisiere Titel, Version, Slug, Status und Beschreibung. Du
+                kannst außerdem das aktuelle Bild und die Release-Datei direkt
+                von deinem Computer ersetzen.
               </p>
             </div>
           </div>
@@ -156,7 +156,7 @@ export default async function EditReleasePage({
               className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-[#6c5ce7]/40 hover:text-white"
             >
               <ArrowLeft className="h-4 w-4" />
-              <span>Back to Releases</span>
+              <span>Zurück zu Releases</span>
             </Link>
 
             <Link
@@ -164,7 +164,7 @@ export default async function EditReleasePage({
               className="inline-flex items-center gap-2 rounded-2xl bg-[#6c5ce7] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110"
             >
               <ExternalLink className="h-4 w-4" />
-              <span>View Public Page</span>
+              <span>Öffentliche Seite ansehen</span>
             </Link>
           </div>
         </div>
@@ -174,7 +174,7 @@ export default async function EditReleasePage({
         <div className="flex items-start gap-3 rounded-[28px] border border-red-500/20 bg-red-500/10 p-4 text-red-100">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-300" />
           <div>
-            <div className="font-semibold">Save failed</div>
+            <div className="font-semibold">Speichern fehlgeschlagen</div>
             <p className="mt-1 text-sm text-red-100/90">{errorMessage}</p>
           </div>
         </div>
@@ -184,7 +184,7 @@ export default async function EditReleasePage({
         <div className="flex items-start gap-3 rounded-[28px] border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-100">
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
           <div>
-            <div className="font-semibold">Saved successfully</div>
+            <div className="font-semibold">Erfolgreich gespeichert</div>
             <p className="mt-1 text-sm text-emerald-100/90">
               {successMessage}
             </p>
@@ -207,7 +207,7 @@ export default async function EditReleasePage({
             </span>
           </div>
           <div className="mt-3 text-sm text-white/60">
-            Current publication status
+            Aktueller Veröffentlichungsstatus
           </div>
         </div>
 
@@ -219,30 +219,30 @@ export default async function EditReleasePage({
             {release._count.downloads}
           </div>
           <div className="mt-2 text-sm text-white/60">
-            Total number of downloads
+            Gesamtzahl der Downloads
           </div>
         </div>
 
         <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6 shadow-xl shadow-black/10 backdrop-blur">
           <div className="text-xs uppercase tracking-[0.16em] text-white/45">
-            Comments
+            Kommentare
           </div>
           <div className="mt-2 text-2xl font-semibold text-white">
             {release._count.comments}
           </div>
           <div className="mt-2 text-sm text-white/60">
-            Community activity for this release
+            Community-Aktivität für dieses Release
           </div>
         </div>
 
         <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6 shadow-xl shadow-black/10 backdrop-blur">
           <div className="text-xs uppercase tracking-[0.16em] text-white/45">
-            Updated
+            Aktualisiert
           </div>
           <div className="mt-2 text-lg font-semibold text-white">
             {formatDateTime(release.updatedAt)}
           </div>
-          <div className="mt-2 text-sm text-white/60">Latest update</div>
+          <div className="mt-2 text-sm text-white/60">Letzte Änderung</div>
         </div>
       </section>
 
@@ -253,9 +253,9 @@ export default async function EditReleasePage({
               <ImageIcon className="h-5 w-5 text-[#9d8dff]" />
             </div>
             <div>
-              <div className="text-sm font-medium text-white/45">Form</div>
+              <div className="text-sm font-medium text-white/45">Formular</div>
               <h2 className="text-2xl font-semibold text-white">
-                Edit Release Details
+                Release-Daten bearbeiten
               </h2>
             </div>
           </div>
@@ -283,10 +283,10 @@ export default async function EditReleasePage({
               </div>
               <div>
                 <div className="text-sm font-medium text-white/45">
-                  Preview
+                  Vorschau
                 </div>
                 <h2 className="text-2xl font-semibold text-white">
-                  Current Image & File
+                  Aktuelles Bild & Datei
                 </h2>
               </div>
             </div>
@@ -305,7 +305,7 @@ export default async function EditReleasePage({
                     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                       <ImageIcon className="h-8 w-8 text-[#9d8dff]/80" />
                     </div>
-                    <span className="text-sm">No preview image available</span>
+                    <span className="text-sm">Kein Vorschaubild vorhanden</span>
                   </div>
                 )}
               </div>
@@ -313,19 +313,23 @@ export default async function EditReleasePage({
               <div className="space-y-3 p-5">
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
                   <div className="text-xs uppercase tracking-[0.16em] text-white/45">
-                    Current Image
+                    Aktuelles Bild
                   </div>
                   <div className="mt-2 text-sm text-white/75">
-                    {release.imageUrl ? "Image available" : "No image saved"}
+                    {release.imageUrl
+                      ? "Bild vorhanden"
+                      : "Kein Bild gespeichert"}
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
                   <div className="text-xs uppercase tracking-[0.16em] text-white/45">
-                    Current File
+                    Aktuelle Datei
                   </div>
                   <div className="mt-2 text-sm text-white/75">
-                    {release.fileUrl ? "File available" : "No file saved"}
+                    {release.fileUrl
+                      ? "Datei vorhanden"
+                      : "Keine Datei gespeichert"}
                   </div>
                 </div>
 
@@ -337,7 +341,7 @@ export default async function EditReleasePage({
                     className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold text-white/80 transition hover:border-[#6c5ce7]/40 hover:text-white"
                   >
                     <Upload className="h-4 w-4" />
-                    <span>Open Current File</span>
+                    <span>Aktuelle Datei öffnen</span>
                   </Link>
                 ) : null}
               </div>
@@ -345,12 +349,12 @@ export default async function EditReleasePage({
           </section>
 
           <section className="rounded-[32px] border border-white/10 bg-white/[0.03] p-6 shadow-2xl shadow-black/20 backdrop-blur sm:p-8">
-            <div className="text-sm font-medium text-white/45">Metadata</div>
+            <div className="text-sm font-medium text-white/45">Metadaten</div>
 
             <div className="mt-4 space-y-4">
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
                 <div className="text-xs uppercase tracking-[0.16em] text-white/45">
-                  Created
+                  Erstellt
                 </div>
                 <div className="mt-2 text-sm font-semibold text-white">
                   {formatDateTime(release.createdAt)}
@@ -359,7 +363,7 @@ export default async function EditReleasePage({
 
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
                 <div className="text-xs uppercase tracking-[0.16em] text-white/45">
-                  Last Updated
+                  Zuletzt aktualisiert
                 </div>
                 <div className="mt-2 text-sm font-semibold text-white">
                   {formatDateTime(release.updatedAt)}
@@ -368,7 +372,7 @@ export default async function EditReleasePage({
 
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
                 <div className="text-xs uppercase tracking-[0.16em] text-white/45">
-                  Public URL
+                  Öffentliche URL
                 </div>
                 <div className="mt-2 break-all text-sm font-semibold text-white">
                   {publicHref}

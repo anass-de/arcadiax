@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 
 type PageProps = {
-  params: Promise<{
+  params: {
     id: string;
-  }>;
+  };
 };
 
-export default async function AdminReleasePage({ params }: PageProps) {
-  const { id } = await params;
+export default function AdminReleasePage({ params }: PageProps) {
+  const { id } = params;
+
   redirect(`/dashboard/releases/${id}/edit`);
 }

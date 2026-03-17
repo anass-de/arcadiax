@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 import { ImageIcon, Plus, Upload } from "lucide-react";
 
+import { uploadFileLarge } from "@/lib/upload-file-large";
+
 type UploadKind = "image" | "release";
 
 type UploadState = {
@@ -30,8 +32,8 @@ const initialUploadState: UploadState = {
   error: null,
 };
 
-const MAX_SINGLE_UPLOAD_SIZE = 500 * 1024 * 1024; // 500 MB
 const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024; // 20 MB
+const MAX_RELEASE_UPLOAD_SIZE = 30 * 1024 * 1024 * 1024; // 30 GB
 
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
@@ -46,6 +48,8 @@ const ALLOWED_RELEASE_TYPES = [
   "application/x-zip",
   "application/octet-stream",
   "application/pdf",
+  "application/x-7z-compressed",
+  "application/x-rar-compressed",
 ];
 
 const PRESIGN_TIMEOUT_MS = 20_000;
@@ -101,6 +105,14 @@ function getReleaseMimeType(file: File) {
     return "application/pdf";
   }
 
+  if (lowerName.endsWith(".7z")) {
+    return "application/x-7z-compressed";
+  }
+
+  if (lowerName.endsWith(".rar")) {
+    return "application/x-rar-compressed";
+  }
+
   return "application/octet-stream";
 }
 
@@ -127,12 +139,12 @@ function validateFile(file: File, kind: UploadKind) {
   }
 
   if (!ALLOWED_RELEASE_TYPES.includes(fileType)) {
-    return "Nur ZIP oder PDF sind als Release-Datei erlaubt.";
+    return "Nur ZIP, PDF, 7Z oder RAR sind als Release-Datei erlaubt.";
   }
 
-  if (file.size > MAX_SINGLE_UPLOAD_SIZE) {
+  if (file.size > MAX_RELEASE_UPLOAD_SIZE) {
     return `Die Datei ist zu groß. Maximal ${formatBytes(
-      MAX_SINGLE_UPLOAD_SIZE
+      MAX_RELEASE_UPLOAD_SIZE
     )} sind erlaubt.`;
   }
 
@@ -218,18 +230,12 @@ function uploadViaXhrWithTimeout(args: {
   });
 }
 
-async function uploadFileWithProgress(args: {
+async function uploadImageWithProgress(args: {
   file: File;
   slug: string;
-  kind: UploadKind;
   onProgress: (progress: number) => void;
 }) {
-  const fileType =
-    args.kind === "release"
-      ? getReleaseMimeType(args.file)
-      : args.file.type?.trim() || "application/octet-stream";
-
-  const folder = args.kind === "image" ? "media" : "releases";
+  const fileType = args.file.type?.trim() || "application/octet-stream";
 
   const prepareResponse = await fetchJsonWithTimeout(
     "/api/admin/uploads/presign",
@@ -241,7 +247,7 @@ async function uploadFileWithProgress(args: {
       body: JSON.stringify({
         fileName: args.file.name,
         fileType,
-        folder,
+        folder: "media",
         slug: args.slug,
         fileSize: args.file.size,
       }),
@@ -255,7 +261,7 @@ async function uploadFileWithProgress(args: {
 
   if (!prepareResponse.ok || !prepareData?.uploadUrl || !prepareData.publicUrl) {
     throw new Error(
-      prepareData?.error || "Upload konnte nicht vorbereitet werden."
+      prepareData?.error || "Bild-Upload konnte nicht vorbereitet werden."
     );
   }
 
@@ -267,7 +273,13 @@ async function uploadFileWithProgress(args: {
   for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt += 1) {
     const cappedProgressStart =
       MAX_UPLOAD_RETRIES > 1
-        ? Math.min(90, Math.max(0, Math.round(((attempt - 1) / MAX_UPLOAD_RETRIES) * 100)))
+        ? Math.min(
+            90,
+            Math.max(
+              0,
+              Math.round(((attempt - 1) / MAX_UPLOAD_RETRIES) * 100)
+            )
+          )
         : 0;
 
     args.onProgress(cappedProgressStart);
@@ -299,7 +311,7 @@ async function uploadFileWithProgress(args: {
       lastError =
         error instanceof Error
           ? error
-          : new Error("Upload fehlgeschlagen. Bitte versuche es erneut.");
+          : new Error("Bild-Upload fehlgeschlagen. Bitte versuche es erneut.");
 
       if (attempt < MAX_UPLOAD_RETRIES) {
         await wait(RETRY_DELAY_MS);
@@ -307,7 +319,7 @@ async function uploadFileWithProgress(args: {
     }
   }
 
-  throw lastError ?? new Error("Upload fehlgeschlagen.");
+  throw lastError ?? new Error("Bild-Upload fehlgeschlagen.");
 }
 
 export default function NewReleaseForm() {
@@ -343,6 +355,7 @@ export default function NewReleaseForm() {
 
   function handleReleaseFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
 
     if (!file) {
       setReleaseFile(null);
@@ -360,7 +373,6 @@ export default function NewReleaseForm() {
         error: validationError,
       });
       setFormError(null);
-      event.target.value = "";
       return;
     }
 
@@ -375,6 +387,7 @@ export default function NewReleaseForm() {
 
   function handleImageFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
 
     if (!file) {
       setImageFile(null);
@@ -392,7 +405,6 @@ export default function NewReleaseForm() {
         error: validationError,
       });
       setFormError(null);
-      event.target.value = "";
       return;
     }
 
@@ -405,30 +417,16 @@ export default function NewReleaseForm() {
     setFormError(null);
   }
 
-  async function ensureUploadedFile(args: {
-    file: File | null;
-    kind: UploadKind;
-  }) {
-    if (!args.file) {
-      if (args.kind === "release") {
-        throw new Error("Bitte wähle eine Release-Datei aus.");
-      }
-      return null;
+  async function ensureUploadedRelease(file: File | null) {
+    if (!file) {
+      throw new Error("Bitte wähle eine Release-Datei aus.");
     }
 
-    const file = args.file;
-
-    if (args.kind === "release" && releaseUpload.uploadedUrl) {
+    if (releaseUpload.uploadedUrl) {
       return releaseUpload.uploadedUrl;
     }
 
-    if (args.kind === "image" && imageUpload.uploadedUrl) {
-      return imageUpload.uploadedUrl;
-    }
-
-    const setState = args.kind === "release" ? setReleaseUpload : setImageUpload;
-
-    setState({
+    setReleaseUpload({
       isUploading: true,
       progress: 0,
       fileName: file.name,
@@ -437,12 +435,15 @@ export default function NewReleaseForm() {
     });
 
     try {
-      const uploadedUrl = await uploadFileWithProgress({
-        file,
-        kind: args.kind,
+      const uploaded = await uploadFileLarge(file, {
+        folder: "releases",
         slug: effectiveSlug,
+        kind: "release",
+        parallel: 4,
+        partSize: 100 * 1024 * 1024,
+        maxRetries: 3,
         onProgress(progress) {
-          setState((prev) => ({
+          setReleaseUpload((prev) => ({
             ...prev,
             isUploading: true,
             progress,
@@ -452,7 +453,66 @@ export default function NewReleaseForm() {
         },
       });
 
-      setState({
+      setReleaseUpload({
+        isUploading: false,
+        progress: 100,
+        fileName: file.name,
+        uploadedUrl: uploaded.publicUrl,
+        error: null,
+      });
+
+      return uploaded.publicUrl;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Release-Upload fehlgeschlagen. Bitte versuche es erneut.";
+
+      setReleaseUpload({
+        isUploading: false,
+        progress: 0,
+        fileName: file.name,
+        uploadedUrl: null,
+        error: message,
+      });
+
+      throw new Error(message);
+    }
+  }
+
+  async function ensureUploadedImage(file: File | null) {
+    if (!file) {
+      return null;
+    }
+
+    if (imageUpload.uploadedUrl) {
+      return imageUpload.uploadedUrl;
+    }
+
+    setImageUpload({
+      isUploading: true,
+      progress: 0,
+      fileName: file.name,
+      uploadedUrl: null,
+      error: null,
+    });
+
+    try {
+      const uploadedUrl = await uploadImageWithProgress({
+        file,
+        slug: effectiveSlug,
+        onProgress(progress) {
+          setImageUpload((prev) => ({
+            ...prev,
+            isUploading: true,
+            progress,
+            fileName: file.name,
+            error: null,
+          }));
+        },
+      });
+
+      setImageUpload({
         isUploading: false,
         progress: 100,
         fileName: file.name,
@@ -465,9 +525,9 @@ export default function NewReleaseForm() {
       const message =
         error instanceof Error
           ? error.message
-          : "Upload fehlgeschlagen. Bitte versuche es erneut.";
+          : "Bild-Upload fehlgeschlagen. Bitte versuche es erneut.";
 
-      setState({
+      setImageUpload({
         isUploading: false,
         progress: 0,
         fileName: file.name,
@@ -521,15 +581,8 @@ export default function NewReleaseForm() {
     setIsSubmitting(true);
 
     try {
-      const fileUrl = await ensureUploadedFile({
-        file: releaseFile,
-        kind: "release",
-      });
-
-      const imageUrl = await ensureUploadedFile({
-        file: imageFile,
-        kind: "image",
-      });
+      const fileUrl = await ensureUploadedRelease(releaseFile);
+      const imageUrl = await ensureUploadedImage(imageFile);
 
       const response = await fetch("/api/admin/releases", {
         method: "POST",
@@ -743,15 +796,15 @@ export default function NewReleaseForm() {
           </label>
           <input
             type="file"
-            accept=".zip,.pdf,application/zip,application/x-zip-compressed,application/x-zip,application/pdf"
+            accept=".zip,.pdf,.7z,.rar,application/zip,application/x-zip-compressed,application/x-zip,application/pdf,application/x-7z-compressed,application/x-rar-compressed,application/octet-stream"
             onChange={handleReleaseFileChange}
             required
             disabled={anyBusy}
             className="block w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-zinc-300 file:mr-4 file:rounded-xl file:border-0 file:bg-[#6c5ce7]/15 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:opacity-60"
           />
           <p className="mt-2 text-xs text-zinc-500">
-            Pflichtfeld. Erlaubt: ZIP oder PDF. Maximal{" "}
-            {formatBytes(MAX_SINGLE_UPLOAD_SIZE)}.
+            Pflichtfeld. Erlaubt: ZIP, PDF, 7Z oder RAR. Maximal{" "}
+            {formatBytes(MAX_RELEASE_UPLOAD_SIZE)}.
           </p>
 
           {releaseFile ? (

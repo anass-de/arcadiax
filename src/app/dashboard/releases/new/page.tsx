@@ -16,11 +16,13 @@ type SessionUser = {
   role?: "USER" | "ADMIN" | null;
 };
 
+type ResolvedSearchParams = {
+  error?: string;
+  success?: string;
+};
+
 type PageProps = {
-  searchParams?: Promise<{
-    error?: string;
-    success?: string;
-  }>;
+  searchParams?: Promise<ResolvedSearchParams>;
 };
 
 function normalizeMessage(value?: string) {
@@ -51,7 +53,7 @@ export default async function NewReleasePage({ searchParams }: PageProps) {
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
               <Shield className="h-4 w-4" />
-              Release Management
+              Release Verwaltung
             </div>
 
             <div>
@@ -63,6 +65,15 @@ export default async function NewReleasePage({ searchParams }: PageProps) {
                 sowie optional ein Vorschaubild hoch.
               </p>
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/dashboard/releases"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+            >
+              Zurück zur Übersicht
+            </Link>
           </div>
         </div>
       </section>
@@ -125,13 +136,14 @@ export default async function NewReleasePage({ searchParams }: PageProps) {
             <div className="space-y-5 text-sm leading-7 text-zinc-400">
               <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
                 Verwende einen klaren Titel und eine saubere Versionsnummer,
-                damit das Release später gut lesbar ist.
+                damit das Release später gut lesbar und leicht auffindbar ist.
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
                 Nutze einen eindeutigen Slug wie{" "}
                 <span className="font-medium text-white">arcadiax</span>.
-                Wenn du nichts einträgst, wird er automatisch erzeugt.
+                Wenn du nichts einträgst, wird er automatisch aus dem Titel
+                erzeugt.
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
@@ -141,8 +153,14 @@ export default async function NewReleasePage({ searchParams }: PageProps) {
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-                Die Datei wird direkt in den Storage hochgeladen. Danach
-                werden nur die Metadaten gespeichert.
+                Bilder werden normal hochgeladen. Große Release-Dateien werden
+                per Multipart-Upload verarbeitet und können bis zu{" "}
+                <span className="font-medium text-white">30 GB</span> groß sein.
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+                Nach dem Upload werden nur die Metadaten in der Datenbank
+                gespeichert. Die eigentlichen Dateien liegen im Storage.
               </div>
             </div>
           </section>

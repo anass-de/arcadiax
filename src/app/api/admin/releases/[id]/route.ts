@@ -44,22 +44,44 @@ async function requireAdmin() {
     return { session: null, response: jsonError("Nicht eingeloggt.", 401) };
   }
 
-  if (session.user.role !== "ADMIN") {
+  if ((session.user as { role?: string | null }).role !== "ADMIN") {
     return { session: null, response: jsonError("Kein Zugriff.", 403) };
   }
 
   return { session, response: null };
 }
 
+function revalidateReleasePaths(params: {
+  id: string;
+  oldSlug?: string | null;
+  newSlug?: string | null;
+}) {
+  revalidatePath("/");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/releases");
+  revalidatePath(`/dashboard/releases/${params.id}/edit`);
+  revalidatePath("/releases");
+
+  if (params.oldSlug?.trim()) {
+    revalidatePath(`/releases/${params.oldSlug}`);
+  } else {
+    revalidatePath(`/releases/${params.id}`);
+  }
+
+  if (params.newSlug?.trim() && params.newSlug !== params.oldSlug) {
+    revalidatePath(`/releases/${params.newSlug}`);
+  }
+}
+
 export async function GET(
   _req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: { id: string } }
 ) {
   try {
     const auth = await requireAdmin();
     if (auth.response) return auth.response;
 
-    const { id } = await context.params;
+    const { id } = context.params;
 
     const release = await prisma.release.findUnique({
       where: { id },
@@ -113,13 +135,13 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: { id: string } }
 ) {
   try {
     const auth = await requireAdmin();
     if (auth.response) return auth.response;
 
-    const { id } = await context.params;
+    const { id } = context.params;
     const body = await req.json().catch(() => null);
 
     if (!body || typeof body !== "object") {
@@ -268,7 +290,11 @@ export async function PATCH(
     });
 
     if (body.fileUrl !== undefined && oldFileUrl && oldFileUrl !== updated.fileUrl) {
-      await deleteR2ObjectsFromUrls([oldFileUrl]);
+      try {
+        await deleteR2ObjectsFromUrls([oldFileUrl]);
+      } catch (error) {
+        console.error("R2 cleanup failed for old fileUrl:", error);
+      }
     }
 
     if (
@@ -276,16 +302,18 @@ export async function PATCH(
       oldImageUrl &&
       oldImageUrl !== updated.imageUrl
     ) {
-      await deleteR2ObjectsFromUrls([oldImageUrl]);
+      try {
+        await deleteR2ObjectsFromUrls([oldImageUrl]);
+      } catch (error) {
+        console.error("R2 cleanup failed for old imageUrl:", error);
+      }
     }
 
-    revalidatePath("/");
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/releases");
-    revalidatePath(`/dashboard/releases/${id}/edit`);
-    revalidatePath("/releases");
-    revalidatePath(current.slug ? `/releases/${current.slug}` : `/releases/${id}`);
-    revalidatePath(updated.slug ? `/releases/${updated.slug}` : `/releases/${id}`);
+    revalidateReleasePaths({
+      id,
+      oldSlug: current.slug,
+      newSlug: updated.slug,
+    });
 
     return NextResponse.json({
       ok: true,
@@ -299,13 +327,13 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: { id: string } }
 ) {
   try {
     const auth = await requireAdmin();
     if (auth.response) return auth.response;
 
-    const { id } = await context.params;
+    const { id } = context.params;
 
     const release = await prisma.release.findUnique({
       where: { id },
@@ -321,18 +349,32 @@ export async function DELETE(
       return jsonError("Release nicht gefunden.", 404);
     }
 
-    await prisma.release.delete({
-      where: { id },
+    await prisma.$transaction([
+      prisma.comment.deleteMany({
+        where: { releaseId: id },
+      }),
+      prisma.releaseLike.deleteMany({
+        where: { releaseId: id },
+      }),
+      prisma.download.deleteMany({
+        where: { releaseId: id },
+      }),
+      prisma.release.delete({
+        where: { id },
+      }),
+    ]);
+
+    try {
+      await deleteR2ObjectsFromUrls([release.fileUrl, release.imageUrl]);
+    } catch (error) {
+      console.error("R2 cleanup failed after release delete:", error);
+    }
+
+    revalidateReleasePaths({
+      id,
+      oldSlug: release.slug,
+      newSlug: null,
     });
-
-    await deleteR2ObjectsFromUrls([release.fileUrl, release.imageUrl]);
-
-    revalidatePath("/");
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/releases");
-    revalidatePath(`/dashboard/releases/${id}/edit`);
-    revalidatePath("/releases");
-    revalidatePath(release.slug ? `/releases/${release.slug}` : `/releases/${id}`);
 
     return NextResponse.json({
       ok: true,
