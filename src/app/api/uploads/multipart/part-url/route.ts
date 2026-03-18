@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/auth";
-import { createMultipartPartUploadUrl } from "@/lib/r2";
+import { getMultipartPartUploadUrl } from "@/lib/r2";
 
 type SessionUser = {
   id?: string | null;
@@ -10,11 +10,26 @@ type SessionUser = {
   email?: string | null;
 };
 
-type PartBody = {
+type PartUrlBody = {
   key?: string;
   uploadId?: string;
   partNumber?: number | string;
 };
+
+function parsePartNumber(value: PartUrlBody["partNumber"]) {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed)) {
+      return parsed;
+    }
+  }
+
+  return NaN;
+}
 
 export async function POST(request: Request) {
   try {
@@ -22,61 +37,62 @@ export async function POST(request: Request) {
     const user = session?.user as SessionUser | undefined;
 
     if (!user?.id) {
-      return NextResponse.json({ error: "Nicht eingeloggt." }, { status: 401 });
-    }
-
-    if (user.role !== "ADMIN") {
       return NextResponse.json(
-        { error: "Nur Admins dürfen Upload-Parts signieren." },
-        { status: 403 }
+        { error: "Nicht eingeloggt." },
+        { status: 401 }
       );
     }
 
-    const body = (await request.json().catch(() => null)) as PartBody | null;
+    const body = (await request.json()) as PartUrlBody;
 
-    if (!body || typeof body !== "object") {
-      return NextResponse.json(
-        { error: "Ungültige Anfrage." },
-        { status: 400 }
-      );
-    }
-
-    const key = String(body.key ?? "").trim();
-    const uploadId = String(body.uploadId ?? "").trim();
-    const partNumberRaw = body.partNumber;
-    const partNumber =
-      typeof partNumberRaw === "number"
-        ? partNumberRaw
-        : Number.parseInt(String(partNumberRaw ?? ""), 10);
+    const key = body.key?.trim();
+    const uploadId = body.uploadId?.trim();
+    const partNumber = parsePartNumber(body.partNumber);
 
     if (!key) {
-      return NextResponse.json({ error: "Key fehlt." }, { status: 400 });
+      return NextResponse.json(
+        { error: "key fehlt." },
+        { status: 400 }
+      );
     }
 
     if (!uploadId) {
-      return NextResponse.json({ error: "UploadId fehlt." }, { status: 400 });
-    }
-
-    if (!Number.isInteger(partNumber) || partNumber < 1) {
       return NextResponse.json(
-        { error: "Ungültige Part-Nummer." },
+        { error: "uploadId fehlt." },
         { status: 400 }
       );
     }
 
-    const result = await createMultipartPartUploadUrl({
+    if (!Number.isInteger(partNumber) || partNumber <= 0) {
+      return NextResponse.json(
+        { error: "Ungültige partNumber." },
+        { status: 400 }
+      );
+    }
+
+    const uploadUrl = await getMultipartPartUploadUrl({
       key,
       uploadId,
       partNumber,
-      expiresIn: 60 * 20,
     });
 
-    return NextResponse.json(result, { status: 200 });
+    return NextResponse.json({
+      ok: true,
+      key,
+      uploadId,
+      partNumber,
+      uploadUrl,
+    });
   } catch (error) {
-    console.error("multipart part presign error:", error);
+    console.error("Upload part-url error:", error);
 
     return NextResponse.json(
-      { error: "Part-Upload-URL konnte nicht erstellt werden." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Part-URL konnte nicht erstellt werden.",
+      },
       { status: 500 }
     );
   }

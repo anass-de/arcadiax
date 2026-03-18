@@ -6,19 +6,15 @@ import { completeMultipartUpload } from "@/lib/r2";
 
 type SessionUser = {
   id?: string | null;
-  role?: string | null;
-  email?: string | null;
-};
-
-type CompletePart = {
-  ETag?: string;
-  PartNumber?: number | string;
 };
 
 type CompleteBody = {
   key?: string;
   uploadId?: string;
-  parts?: CompletePart[];
+  parts?: Array<{
+    ETag?: string;
+    PartNumber?: number;
+  }>;
 };
 
 export async function POST(request: Request) {
@@ -30,81 +26,58 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Nicht eingeloggt." }, { status: 401 });
     }
 
-    if (user.role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Nur Admins dürfen Multipart-Uploads abschließen." },
-        { status: 403 }
-      );
+    const body = (await request.json()) as CompleteBody;
+    const key = body.key?.trim();
+    const uploadId = body.uploadId?.trim();
+    const parts = Array.isArray(body.parts) ? body.parts : [];
+
+    if (!key || !uploadId) {
+      return NextResponse.json({ error: "key oder uploadId fehlt." }, { status: 400 });
     }
 
-    const body = (await request.json().catch(() => null)) as CompleteBody | null;
-
-    if (!body || typeof body !== "object") {
-      return NextResponse.json(
-        { error: "Ungültige Anfrage." },
-        { status: 400 }
-      );
+    if (!parts.length) {
+      return NextResponse.json({ error: "Multipart-Teile fehlen." }, { status: 400 });
     }
 
-    const key = String(body.key ?? "").trim();
-    const uploadId = String(body.uploadId ?? "").trim();
-    const rawParts = Array.isArray(body.parts) ? body.parts : [];
-
-    if (!key) {
-      return NextResponse.json({ error: "Key fehlt." }, { status: 400 });
-    }
-
-    if (!uploadId) {
-      return NextResponse.json({ error: "UploadId fehlt." }, { status: 400 });
-    }
-
-    if (rawParts.length === 0) {
-      return NextResponse.json(
-        { error: "Keine Upload-Parts übergeben." },
-        { status: 400 }
-      );
-    }
-
-    const parts = rawParts
-      .map((part) => {
-        const etag = String(part?.ETag ?? "").trim();
-        const partNumberRaw = part?.PartNumber;
-        const partNumber =
-          typeof partNumberRaw === "number"
-            ? partNumberRaw
-            : Number.parseInt(String(partNumberRaw ?? ""), 10);
-
-        return {
-          ETag: etag,
-          PartNumber: partNumber,
-        };
-      })
+    const normalizedParts = parts
       .filter(
-        (part) =>
-          Boolean(part.ETag) &&
+        (part): part is { ETag: string; PartNumber: number } =>
+          typeof part?.ETag === "string" &&
+          !!part.ETag.trim() &&
+          typeof part?.PartNumber === "number" &&
           Number.isInteger(part.PartNumber) &&
           part.PartNumber > 0
-      );
+      )
+      .map((part) => ({
+        ETag: part.ETag.replaceAll('"', ""),
+        PartNumber: part.PartNumber,
+      }));
 
-    if (parts.length === 0) {
-      return NextResponse.json(
-        { error: "Keine gültigen Upload-Parts vorhanden." },
-        { status: 400 }
-      );
+    if (!normalizedParts.length) {
+      return NextResponse.json({ error: "Ungültige Multipart-Teile." }, { status: 400 });
     }
 
     const result = await completeMultipartUpload({
       key,
       uploadId,
-      parts,
+      parts: normalizedParts,
     });
 
-    return NextResponse.json(result, { status: 200 });
+    return NextResponse.json({
+      ok: true,
+      key: result.key,
+      publicUrl: result.publicUrl,
+    });
   } catch (error) {
-    console.error("multipart complete error:", error);
+    console.error("Upload complete error:", error);
 
     return NextResponse.json(
-      { error: "Multipart-Upload konnte nicht abgeschlossen werden." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Multipart-Upload konnte nicht abgeschlossen werden.",
+      },
       { status: 500 }
     );
   }

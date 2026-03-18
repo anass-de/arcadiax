@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/auth";
-import { buildR2Key, createMultipartUpload, isValidFolder } from "@/lib/r2";
+import {
+  buildR2Key,
+  createMultipartUpload,
+  createPresignedUploadUrl,
+  getMultipartPartUploadUrl,
+  isValidFolder,
+} from "@/lib/r2";
 
 type SessionUser = {
   id?: string | null;
@@ -22,7 +28,15 @@ type StartBody = {
 };
 
 const DEFAULT_PART_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024; // 20 MB
 const MAX_RELEASE_UPLOAD_SIZE = 30 * 1024 * 1024 * 1024; // 30 GB
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+] as const;
 
 const ALLOWED_RELEASE_TYPES = [
   "application/zip",
@@ -32,18 +46,15 @@ const ALLOWED_RELEASE_TYPES = [
   "application/pdf",
   "application/x-7z-compressed",
   "application/vnd.rar",
-  "application/x-rar-compressed",
 ] as const;
 
-function sanitizeSlug(value?: string) {
-  return (
-    (value ?? "general")
-      .trim()
-      .toLowerCase()
-      .replace(/[^\w-]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-+|-+$/g, "") || "general"
-  );
+function parseFileSize(value: StartBody["fileSize"]) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return NaN;
 }
 
 export async function POST(request: Request) {
@@ -52,94 +63,55 @@ export async function POST(request: Request) {
     const user = session?.user as SessionUser | undefined;
 
     if (!user?.id) {
-      return NextResponse.json(
-        { error: "Nicht eingeloggt." },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Nicht eingeloggt." }, { status: 401 });
     }
 
-    if (user.role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Nur Admins dürfen Multipart-Uploads starten." },
-        { status: 403 }
-      );
-    }
+    const body = (await request.json()) as StartBody;
+    const folder = body.folder?.trim();
+    const slug = body.slug?.trim() || undefined;
+    const fileName = body.fileName?.trim();
+    const contentType = body.contentType?.trim();
+    const kind: UploadKind = body.kind === "image" ? "image" : "release";
+    const fileSize = parseFileSize(body.fileSize);
 
-    const body = (await request.json().catch(() => null)) as StartBody | null;
-
-    if (!body || typeof body !== "object") {
-      return NextResponse.json(
-        { error: "Ungültige Anfrage." },
-        { status: 400 }
-      );
-    }
-
-    const folder = String(body.folder ?? "").trim();
-    const slug = sanitizeSlug(body.slug);
-    const fileName = String(body.fileName ?? "").trim();
-    const contentType = String(body.contentType ?? "").trim();
-    const kind = String(body.kind ?? "").trim() as UploadKind;
-
-    const rawFileSize = body.fileSize;
-    const fileSize =
-      typeof rawFileSize === "number"
-        ? rawFileSize
-        : Number.parseInt(String(rawFileSize ?? ""), 10);
-
-    if (!isValidFolder(folder)) {
-      return NextResponse.json(
-        { error: "Ungültiger Upload-Ordner." },
-        { status: 400 }
-      );
-    }
-
-    if (folder !== "releases") {
-      return NextResponse.json(
-        { error: "Multipart ist nur für Release-Dateien erlaubt." },
-        { status: 400 }
-      );
-    }
-
-    if (kind !== "release") {
-      return NextResponse.json(
-        { error: "Ungültiger Upload-Typ für Multipart." },
-        { status: 400 }
-      );
+    if (!folder || !isValidFolder(folder)) {
+      return NextResponse.json({ error: "Ungültiger Upload-Ordner." }, { status: 400 });
     }
 
     if (!fileName) {
-      return NextResponse.json(
-        { error: "Dateiname fehlt." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Dateiname fehlt." }, { status: 400 });
     }
 
     if (!contentType) {
-      return NextResponse.json(
-        { error: "Dateityp fehlt." },
-        { status: 400 }
-      );
-    }
-
-    if (!(ALLOWED_RELEASE_TYPES as readonly string[]).includes(contentType)) {
-      return NextResponse.json(
-        { error: `Dateityp nicht erlaubt: ${contentType}` },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Content-Type fehlt." }, { status: 400 });
     }
 
     if (!Number.isFinite(fileSize) || fileSize <= 0) {
-      return NextResponse.json(
-        { error: "Ungültige Dateigröße." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Ungültige Dateigröße." }, { status: 400 });
     }
 
-    if (fileSize > MAX_RELEASE_UPLOAD_SIZE) {
-      return NextResponse.json(
-        { error: "Release-Datei ist zu groß. Maximal 30 GB erlaubt." },
-        { status: 400 }
-      );
+    if (kind === "image") {
+      if (!ALLOWED_IMAGE_TYPES.includes(contentType as (typeof ALLOWED_IMAGE_TYPES)[number])) {
+        return NextResponse.json({ error: "Bildtyp nicht erlaubt." }, { status: 400 });
+      }
+
+      if (fileSize > MAX_IMAGE_UPLOAD_SIZE) {
+        return NextResponse.json(
+          { error: "Bilder dürfen maximal 20 MB groß sein." },
+          { status: 400 }
+        );
+      }
+    } else {
+      if (!ALLOWED_RELEASE_TYPES.includes(contentType as (typeof ALLOWED_RELEASE_TYPES)[number])) {
+        return NextResponse.json({ error: "Dateityp nicht erlaubt." }, { status: 400 });
+      }
+
+      if (fileSize > MAX_RELEASE_UPLOAD_SIZE) {
+        return NextResponse.json(
+          { error: "Release-Dateien dürfen maximal 30 GB groß sein." },
+          { status: 400 }
+        );
+      }
     }
 
     const key = buildR2Key({
@@ -148,30 +120,60 @@ export async function POST(request: Request) {
       fileName,
     });
 
-    const result = await createMultipartUpload({
+    // Kleine Dateien: Single PUT
+    if (fileSize <= DEFAULT_PART_SIZE) {
+      const single = await createPresignedUploadUrl({
+        key,
+        contentType,
+      });
+
+      return NextResponse.json({
+        mode: "single",
+        uploadUrl: single.uploadUrl,
+        publicUrl: single.publicUrl,
+        key: single.key,
+      });
+    }
+
+    // Große Dateien: Multipart
+    const multipart = await createMultipartUpload({
       key,
       contentType,
-      metadata: {
-        userId: user.id,
-        kind,
-        originalName: fileName,
-      },
     });
+
+    const totalParts = Math.ceil(fileSize / DEFAULT_PART_SIZE);
+
+    const parts = await Promise.all(
+      Array.from({ length: totalParts }, async (_, index) => {
+        const partNumber = index + 1;
+        const uploadUrl = await getMultipartPartUploadUrl({
+          key,
+          uploadId: multipart.uploadId,
+          partNumber,
+        });
+
+        return {
+          partNumber,
+          uploadUrl,
+        };
+      })
+    );
+
+    return NextResponse.json({
+      mode: "multipart",
+      uploadId: multipart.uploadId,
+      key: multipart.key,
+      publicUrl: multipart.publicUrl,
+      partSize: DEFAULT_PART_SIZE,
+      parts,
+    });
+  } catch (error) {
+    console.error("Upload start error:", error);
 
     return NextResponse.json(
       {
-        uploadId: result.uploadId,
-        key: result.key,
-        publicUrl: result.publicUrl,
-        partSize: DEFAULT_PART_SIZE,
+        error: error instanceof Error ? error.message : "Upload konnte nicht gestartet werden.",
       },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error("multipart start error:", error);
-
-    return NextResponse.json(
-      { error: "Multipart-Upload konnte nicht gestartet werden." },
       { status: 500 }
     );
   }

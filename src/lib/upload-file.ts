@@ -1,119 +1,294 @@
-type PresignResponse = {
+export type UploadKind = "image" | "release";
+
+export type UploadFileOptions = {
+  file: File;
+  folder: "releases" | "media" | "avatars";
+  slug?: string;
+  kind: UploadKind;
+  onProgress?: (progress: number) => void;
+  signal?: AbortSignal;
+};
+
+type StartSingleResponse = {
+  ok: true;
+  mode: "single";
   uploadUrl: string;
   publicUrl: string;
   key: string;
 };
 
-type PresignErrorResponse = {
-  error?: string;
+type StartMultipartResponse = {
+  ok: true;
+  mode: "multipart";
+  uploadId: string;
+  key: string;
+  publicUrl: string;
+  partSize: number;
+  parts: Array<{
+    partNumber: number;
+    uploadUrl: string;
+  }>;
 };
 
-const MAX_SINGLE_UPLOAD_SIZE = 500 * 1024 * 1024; // 500 MB
+type StartErrorResponse = {
+  error: string;
+};
 
-function isPresignResponse(
-  value: PresignResponse | PresignErrorResponse | null
-): value is PresignResponse {
-  return Boolean(
-    value &&
-      typeof value === "object" &&
-      "uploadUrl" in value &&
-      "publicUrl" in value &&
-      "key" in value &&
-      typeof value.uploadUrl === "string" &&
-      typeof value.publicUrl === "string" &&
-      typeof value.key === "string"
-  );
+type StartResponse =
+  | StartSingleResponse
+  | StartMultipartResponse
+  | StartErrorResponse;
+
+export type UploadResult = {
+  uploadedUrl: string;
+  key: string;
+};
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
-export async function uploadFileToR2(params: {
-  file: File;
-  folder: "releases" | "media" | "avatars";
-  slug: string;
-}) {
-  console.log("uploadFileToR2 START", {
-    fileName: params.file?.name,
-    fileSize: params.file?.size,
-    fileType: params.file?.type,
-    folder: params.folder,
-    slug: params.slug,
-  });
-
-  if (!params.file) {
-    throw new Error("Keine Datei ausgewählt.");
+async function parseJsonSafe<T>(response: Response): Promise<T | null> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
   }
+}
 
-  const cleanSlug = params.slug?.trim();
-  if (!cleanSlug) {
-    throw new Error("Slug fehlt für den Upload.");
+async function putWithTimeout(
+  url: string,
+  blob: Blob,
+  contentType: string,
+  signal?: AbortSignal,
+  timeoutMs = 60_000
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  const abortHandler = () => controller.abort();
+  signal?.addEventListener("abort", abortHandler);
+
+  try {
+    const response = await fetch(url, {
+      method: "PUT",
+      body: blob,
+      headers: {
+        "Content-Type": contentType,
+      },
+      signal: controller.signal,
+    });
+
+    return response;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortHandler);
   }
+}
 
-  if (params.file.size <= 0) {
-    throw new Error("Die Datei ist leer.");
-  }
-
-  if (params.file.size > MAX_SINGLE_UPLOAD_SIZE) {
-    throw new Error(
-      "Die Datei ist zu groß für den aktuellen Direkt-Upload. Bitte vorerst maximal 500 MB hochladen."
-    );
-  }
-
-  const fileType = params.file.type?.trim() || "application/octet-stream";
-
-  console.log("calling /api/admin/uploads/presign");
-
-  const presignResponse = await fetch("/api/admin/uploads/presign", {
+async function startUpload(options: UploadFileOptions): Promise<StartResponse> {
+  const response = await fetch("/api/uploads", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    cache: "no-store",
     body: JSON.stringify({
-      fileName: params.file.name,
-      fileType,
-      folder: params.folder,
-      slug: cleanSlug,
-      fileSize: params.file.size,
+      folder: options.folder,
+      slug: options.slug,
+      fileName: options.file.name,
+      fileSize: options.file.size,
+      contentType: options.file.type || "application/octet-stream",
+      kind: options.kind,
     }),
+    signal: options.signal,
   });
 
-  const presignData = (await presignResponse.json().catch(() => null)) as
-    | PresignResponse
-    | PresignErrorResponse
-    | null;
+  const data = await parseJsonSafe<StartResponse>(response);
 
-  console.log("presignResponse status", presignResponse.status);
-  console.log("presignData", presignData);
-
-  if (!presignResponse.ok || !isPresignResponse(presignData)) {
+  if (!response.ok) {
     const errorMessage =
-      presignData && "error" in presignData && presignData.error
-        ? presignData.error
-        : "Presigned URL konnte nicht erstellt werden.";
-
+      data && "error" in data && typeof data.error === "string"
+        ? data.error
+        : "Upload konnte nicht vorbereitet werden.";
     throw new Error(errorMessage);
   }
 
-  console.log("starting PUT upload", presignData.uploadUrl);
+  if (!data) {
+    throw new Error("Leere Antwort vom Upload-Start.");
+  }
 
-  const uploadResponse = await fetch(presignData.uploadUrl, {
-    method: "PUT",
+  return data;
+}
+
+async function completeUpload(payload: {
+  key: string;
+  uploadId: string;
+  parts: Array<{ ETag: string; PartNumber: number }>;
+  signal?: AbortSignal;
+}) {
+  const response = await fetch("/api/uploads/complete", {
+    method: "POST",
     headers: {
-      "Content-Type": fileType,
+      "Content-Type": "application/json",
     },
-    body: params.file,
+    body: JSON.stringify({
+      key: payload.key,
+      uploadId: payload.uploadId,
+      parts: payload.parts,
+    }),
+    signal: payload.signal,
   });
 
-  console.log("uploadResponse status", uploadResponse.status);
+  const data = await parseJsonSafe<{
+    ok?: boolean;
+    publicUrl?: string;
+    key?: string;
+    error?: string;
+  }>(response);
 
-  if (!uploadResponse.ok) {
-    const errorText = await uploadResponse.text().catch(() => "");
-    throw new Error(
-      `Upload fehlgeschlagen (${uploadResponse.status}). ${errorText}`
-    );
+  if (!response.ok || !data?.ok || !data.publicUrl || !data.key) {
+    throw new Error(data?.error || "Multipart-Upload konnte nicht abgeschlossen werden.");
   }
 
   return {
-    url: presignData.publicUrl,
-    key: presignData.key,
+    uploadedUrl: data.publicUrl,
+    key: data.key,
   };
+}
+
+async function abortUpload(payload: {
+  key: string;
+  uploadId: string;
+  signal?: AbortSignal;
+}) {
+  try {
+    await fetch("/api/uploads/abort", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        key: payload.key,
+        uploadId: payload.uploadId,
+      }),
+      signal: payload.signal,
+    });
+  } catch {
+    // bewusst ignorieren
+  }
+}
+
+export async function uploadFileToR2(
+  options: UploadFileOptions
+): Promise<UploadResult> {
+  let start: StartResponse;
+
+  try {
+    start = await startUpload(options);
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error("Upload wurde abgebrochen.");
+    }
+
+    throw error;
+  }
+
+  if ("error" in start) {
+    throw new Error(start.error);
+  }
+
+  if (start.mode === "single") {
+    let uploadResponse: Response;
+
+    try {
+      uploadResponse = await putWithTimeout(
+        start.uploadUrl,
+        options.file,
+        options.file.type || "application/octet-stream",
+        options.signal,
+        60_000
+      );
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw new Error("Upload wurde abgebrochen oder hat das Zeitlimit überschritten.");
+      }
+
+      throw error;
+    }
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Single Upload fehlgeschlagen (${uploadResponse.status}).`);
+    }
+
+    options.onProgress?.(100);
+
+    return {
+      uploadedUrl: start.publicUrl,
+      key: start.key,
+    };
+  }
+
+  const { uploadId, key, publicUrl, parts, partSize } = start;
+  const completedParts: Array<{ ETag: string; PartNumber: number }> = [];
+
+  try {
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index];
+      const startByte = index * partSize;
+      const endByte = Math.min(startByte + partSize, options.file.size);
+      const chunk = options.file.slice(startByte, endByte);
+
+      const uploadResponse = await putWithTimeout(
+        part.uploadUrl,
+        chunk,
+        options.file.type || "application/octet-stream",
+        options.signal,
+        5 * 60_000
+      );
+
+      if (!uploadResponse.ok) {
+        throw new Error(
+          `Part ${part.partNumber} fehlgeschlagen (${uploadResponse.status}).`
+        );
+      }
+
+      const rawETag =
+        uploadResponse.headers.get("etag") ||
+        uploadResponse.headers.get("ETag") ||
+        uploadResponse.headers.get("Etag");
+
+      if (!rawETag) {
+        throw new Error(`ETag für Part ${part.partNumber} fehlt.`);
+      }
+
+      completedParts.push({
+        ETag: rawETag.replaceAll('"', ""),
+        PartNumber: part.partNumber,
+      });
+
+      const progress = Math.round(((index + 1) / parts.length) * 100);
+      options.onProgress?.(progress);
+    }
+
+    const finished = await completeUpload({
+      key,
+      uploadId,
+      parts: completedParts,
+      signal: options.signal,
+    });
+
+    return finished ?? { uploadedUrl: publicUrl, key };
+  } catch (error) {
+    await abortUpload({
+      key,
+      uploadId,
+      signal: options.signal,
+    });
+
+    if (isAbortError(error)) {
+      throw new Error("Upload wurde abgebrochen oder hat das Zeitlimit überschritten.");
+    }
+
+    throw error;
+  }
 }

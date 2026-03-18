@@ -2,7 +2,8 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
-  DeleteObjectsCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -25,15 +26,9 @@ function assertEnv(value: string | undefined, name: string) {
 
 const accountId = assertEnv(R2_ACCOUNT_ID, "R2_ACCOUNT_ID");
 const accessKeyId = assertEnv(R2_ACCESS_KEY_ID, "R2_ACCESS_KEY_ID");
-const secretAccessKey = assertEnv(
-  R2_SECRET_ACCESS_KEY,
-  "R2_SECRET_ACCESS_KEY"
-);
+const secretAccessKey = assertEnv(R2_SECRET_ACCESS_KEY, "R2_SECRET_ACCESS_KEY");
 const bucketName = assertEnv(R2_BUCKET_NAME, "R2_BUCKET_NAME");
-const publicBaseUrl = assertEnv(
-  R2_PUBLIC_BASE_URL,
-  "R2_PUBLIC_BASE_URL"
-).replace(/\/+$/, "");
+const publicBaseUrl = assertEnv(R2_PUBLIC_BASE_URL, "R2_PUBLIC_BASE_URL").replace(/\/+$/, "");
 
 export const r2Client = new S3Client({
   region: "auto",
@@ -42,99 +37,55 @@ export const r2Client = new S3Client({
     accessKeyId,
     secretAccessKey,
   },
-  forcePathStyle: true,
 });
 
-export const R2_BUCKET_NAME_VALUE = bucketName;
-export const R2_PUBLIC_BASE_URL_VALUE = publicBaseUrl;
+export const R2_BUCKET = bucketName;
+export const R2_PUBLIC_URL = publicBaseUrl;
 
-export type UploadFolder = "releases" | "media" | "avatars" | "uploads";
-
-export function isValidFolder(folder: string): folder is UploadFolder {
-  return ["releases", "media", "avatars", "uploads"].includes(folder);
+export function isValidFolder(folder: string): folder is "releases" | "media" | "avatars" {
+  return ["releases", "media", "avatars"].includes(folder);
 }
 
-function sanitizeFileName(fileName: string) {
-  const trimmed = fileName.trim() || "file";
-  const parts = trimmed.split(".");
-  const extension = parts.length > 1 ? parts.pop() : "";
-  const baseName = parts.join(".") || "file";
-
-  const safeBase =
-    baseName
-      .normalize("NFKD")
-      .replace(/[^\w.-]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .toLowerCase()
-      .slice(0, 80) || "file";
-
-  const safeExt = extension
-    ? extension
-        .normalize("NFKD")
-        .replace(/[^\w]+/g, "")
-        .toLowerCase()
-        .slice(0, 12)
-    : "";
-
-  return safeExt ? `${safeBase}.${safeExt}` : safeBase;
-}
-
-function sanitizeSlug(slug?: string) {
+export function sanitizeSlug(value: string) {
   return (
-    (slug ?? "general")
+    value
+      .normalize("NFKD")
+      .replace(/[^\w\s-]+/g, "")
       .trim()
       .toLowerCase()
-      .replace(/[^\w-]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-+|-+$/g, "") || "general"
+      .replace(/[\s_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "item"
   );
 }
 
-function sanitizeMetadata(
-  metadata?: Record<string, string>
-): Record<string, string> | undefined {
-  if (!metadata) return undefined;
+export function sanitizeFileName(fileName: string) {
+  const cleaned = fileName
+    .normalize("NFKD")
+    .replace(/[^\w.\-() ]+/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
 
-  const entries = Object.entries(metadata)
-    .filter(
-      ([key, value]) =>
-        typeof key === "string" &&
-        key.trim() &&
-        typeof value === "string" &&
-        value.trim()
-    )
-    .map(([key, value]) => [
-      key
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-+|-+$/g, ""),
-      value
-        .normalize("NFKD")
-        .replace(/[^\x20-\x7E]+/g, "")
-        .trim()
-        .slice(0, 200),
-    ] as const)
-    .filter(([key, value]) => key && value);
-
-  return entries.length ? Object.fromEntries(entries) : undefined;
+  return cleaned || `file-${Date.now()}`;
 }
 
 export function buildR2Key(params: {
-  folder?: string;
-  slug?: string;
+  folder: "releases" | "media" | "avatars";
+  slug?: string | null;
   fileName: string;
 }) {
-  const folder =
-    (params.folder ?? "uploads").trim().replace(/^\/+|\/+$/g, "") || "uploads";
-
-  const slug = sanitizeSlug(params.slug);
   const safeFileName = sanitizeFileName(params.fileName);
+  const safeSlug = params.slug ? sanitizeSlug(params.slug) : null;
   const timestamp = Date.now();
 
-  return `${folder}/${slug}/${timestamp}-${safeFileName}`;
+  if (safeSlug) {
+    return `${params.folder}/${safeSlug}/${timestamp}-${safeFileName}`;
+  }
+
+  return `${params.folder}/${timestamp}-${safeFileName}`;
+}
+
+export function getPublicUrl(key: string) {
+  return `${R2_PUBLIC_URL}/${key}`;
 }
 
 export async function createPresignedUploadUrl(params: {
@@ -143,18 +94,18 @@ export async function createPresignedUploadUrl(params: {
   expiresIn?: number;
 }) {
   const command = new PutObjectCommand({
-    Bucket: bucketName,
+    Bucket: R2_BUCKET,
     Key: params.key,
     ContentType: params.contentType,
   });
 
   const uploadUrl = await getSignedUrl(r2Client, command, {
-    expiresIn: params.expiresIn ?? 3600,
+    expiresIn: params.expiresIn ?? 60 * 10,
   });
 
   return {
     uploadUrl,
-    publicUrl: `${publicBaseUrl}/${params.key}`,
+    publicUrl: getPublicUrl(params.key),
     key: params.key,
   };
 }
@@ -162,53 +113,42 @@ export async function createPresignedUploadUrl(params: {
 export async function createMultipartUpload(params: {
   key: string;
   contentType: string;
-  metadata?: Record<string, string>;
 }) {
   const command = new CreateMultipartUploadCommand({
-    Bucket: bucketName,
+    Bucket: R2_BUCKET,
     Key: params.key,
     ContentType: params.contentType,
-    Metadata: sanitizeMetadata(params.metadata),
   });
 
   const response = await r2Client.send(command);
 
   if (!response.UploadId) {
-    throw new Error("Multipart upload could not be started.");
+    throw new Error("Multipart upload could not be created.");
   }
 
   return {
     uploadId: response.UploadId,
     key: params.key,
-    publicUrl: `${publicBaseUrl}/${params.key}`,
+    publicUrl: getPublicUrl(params.key),
   };
 }
 
-export async function createMultipartPartUploadUrl(params: {
+export async function getMultipartPartUploadUrl(params: {
   key: string;
   uploadId: string;
   partNumber: number;
   expiresIn?: number;
 }) {
-  if (!Number.isInteger(params.partNumber) || params.partNumber < 1) {
-    throw new Error("Invalid multipart part number.");
-  }
-
   const command = new UploadPartCommand({
-    Bucket: bucketName,
+    Bucket: R2_BUCKET,
     Key: params.key,
     UploadId: params.uploadId,
     PartNumber: params.partNumber,
   });
 
-  const uploadUrl = await getSignedUrl(r2Client, command, {
-    expiresIn: params.expiresIn ?? 60 * 20,
+  return getSignedUrl(r2Client, command, {
+    expiresIn: params.expiresIn ?? 60 * 10,
   });
-
-  return {
-    uploadUrl,
-    partNumber: params.partNumber,
-  };
 }
 
 export async function completeMultipartUpload(params: {
@@ -216,40 +156,26 @@ export async function completeMultipartUpload(params: {
   uploadId: string;
   parts: Array<{ ETag: string; PartNumber: number }>;
 }) {
-  const normalizedParts = [...params.parts]
-    .filter(
-      (part) =>
-        part &&
-        typeof part.ETag === "string" &&
-        part.ETag.trim() &&
-        Number.isInteger(part.PartNumber)
-    )
-    .map((part) => ({
-      ETag: part.ETag.trim(),
-      PartNumber: part.PartNumber,
-    }))
-    .sort((a, b) => a.PartNumber - b.PartNumber);
-
-  if (normalizedParts.length === 0) {
-    throw new Error("No multipart parts provided.");
-  }
-
   const command = new CompleteMultipartUploadCommand({
-    Bucket: bucketName,
+    Bucket: R2_BUCKET,
     Key: params.key,
     UploadId: params.uploadId,
     MultipartUpload: {
-      Parts: normalizedParts,
+      Parts: params.parts
+        .slice()
+        .sort((a, b) => a.PartNumber - b.PartNumber)
+        .map((part) => ({
+          ETag: part.ETag,
+          PartNumber: part.PartNumber,
+        })),
     },
   });
 
-  const response = await r2Client.send(command);
+  await r2Client.send(command);
 
   return {
     key: params.key,
-    publicUrl: `${publicBaseUrl}/${params.key}`,
-    location: response.Location ?? `${publicBaseUrl}/${params.key}`,
-    etag: response.ETag ?? null,
+    publicUrl: getPublicUrl(params.key),
   };
 }
 
@@ -258,60 +184,33 @@ export async function abortMultipartUpload(params: {
   uploadId: string;
 }) {
   const command = new AbortMultipartUploadCommand({
-    Bucket: bucketName,
+    Bucket: R2_BUCKET,
     Key: params.key,
     UploadId: params.uploadId,
   });
 
   await r2Client.send(command);
-
-  return { ok: true };
 }
 
-function extractR2KeyFromUrl(url: string) {
-  const trimmedUrl = url.trim();
-  if (!trimmedUrl) return null;
+export async function deleteObjectByKey(key: string) {
+  const command = new DeleteObjectCommand({
+    Bucket: R2_BUCKET,
+    Key: key,
+  });
 
-  if (trimmedUrl.startsWith(`${publicBaseUrl}/`)) {
-    return trimmedUrl.slice(publicBaseUrl.length + 1);
-  }
-
-  try {
-    const parsed = new URL(trimmedUrl);
-    const key = parsed.pathname.replace(/^\/+/, "");
-    return key || null;
-  } catch {
-    return null;
-  }
+  await r2Client.send(command);
 }
 
-export async function deleteR2ObjectsFromUrls(
-  urls: Array<string | null | undefined>
-) {
-  const keys = urls
-    .map((url) => (url ? extractR2KeyFromUrl(url) : null))
-    .filter((key): key is string => Boolean(key));
+export async function createPresignedDownloadUrl(params: {
+  key: string;
+  expiresIn?: number;
+}) {
+  const command = new GetObjectCommand({
+    Bucket: R2_BUCKET,
+    Key: params.key,
+  });
 
-  if (keys.length === 0) {
-    return { deleted: [], skipped: true };
-  }
-
-  const uniqueKeys = [...new Set(keys)];
-
-  await r2Client.send(
-    new DeleteObjectsCommand({
-      Bucket: bucketName,
-      Delete: {
-        Objects: uniqueKeys.map((Key) => ({ Key })),
-        Quiet: false,
-      },
-    })
-  );
-
-  return {
-    deleted: uniqueKeys,
-    skipped: false,
-  };
+  return getSignedUrl(r2Client, command, {
+    expiresIn: params.expiresIn ?? 60 * 10,
+  });
 }
-
-export { bucketName };

@@ -4,7 +4,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import {
   buildR2Key,
+  createMultipartUpload,
   createPresignedUploadUrl,
+  getMultipartPartUploadUrl,
   isValidFolder,
 } from "@/lib/r2";
 
@@ -14,6 +16,21 @@ type SessionUser = {
   email?: string | null;
 };
 
+type UploadKind = "image" | "release";
+
+type UploadBody = {
+  folder?: string;
+  slug?: string;
+  fileName?: string;
+  fileSize?: number | string;
+  contentType?: string;
+  kind?: UploadKind;
+};
+
+const DEFAULT_PART_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024; // 20 MB
+const MAX_RELEASE_UPLOAD_SIZE = 30 * 1024 * 1024 * 1024; // 30 GB
+
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
   "image/png",
@@ -21,7 +38,7 @@ const ALLOWED_IMAGE_TYPES = [
   "image/gif",
 ] as const;
 
-const ALLOWED_FILE_TYPES = [
+const ALLOWED_RELEASE_TYPES = [
   "application/zip",
   "application/x-zip-compressed",
   "application/x-zip",
@@ -29,28 +46,21 @@ const ALLOWED_FILE_TYPES = [
   "application/pdf",
   "application/x-7z-compressed",
   "application/vnd.rar",
-  "application/x-rar-compressed",
 ] as const;
 
-const MAX_SINGLE_UPLOAD_SIZE = 500 * 1024 * 1024; // 500 MB
+function parseFileSize(value: UploadBody["fileSize"]) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
 
-type UploadBody = {
-  fileName?: string;
-  fileType?: string;
-  fileSize?: number | string;
-  folder?: string;
-  slug?: string;
-};
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
 
-function sanitizeSlug(value?: string) {
-  return (
-    (value ?? "general")
-      .trim()
-      .toLowerCase()
-      .replace(/[^\w-]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-+|-+$/g, "") || "general"
-  );
+  return NaN;
 }
 
 export async function POST(request: Request) {
@@ -59,47 +69,38 @@ export async function POST(request: Request) {
     const user = session?.user as SessionUser | undefined;
 
     if (!user?.id) {
-      return NextResponse.json({ error: "Nicht eingeloggt." }, { status: 401 });
-    }
-
-    if (user.role !== "ADMIN") {
       return NextResponse.json(
-        { error: "Nur Admins dürfen Dateien hochladen." },
-        { status: 403 }
+        { error: "Nicht eingeloggt." },
+        { status: 401 }
       );
     }
 
-    const body = (await request.json().catch(() => null)) as UploadBody | null;
+    const body = (await request.json()) as UploadBody;
 
-    if (!body || typeof body !== "object") {
+    const folder = body.folder?.trim();
+    const slug = body.slug?.trim() || undefined;
+    const fileName = body.fileName?.trim();
+    const contentType = body.contentType?.trim();
+    const kind: UploadKind = body.kind === "image" ? "image" : "release";
+    const fileSize = parseFileSize(body.fileSize);
+
+    if (!folder || !isValidFolder(folder)) {
       return NextResponse.json(
-        { error: "Ungültiger Request-Body." },
+        { error: "Ungültiger Upload-Ordner." },
         { status: 400 }
       );
     }
 
-    const fileName = String(body.fileName ?? "").trim();
-    const fileType = String(body.fileType ?? "").trim();
-    const folder = String(body.folder ?? "").trim();
-    const slug = sanitizeSlug(body.slug);
-
-    const rawFileSize = body.fileSize;
-    const fileSize =
-      typeof rawFileSize === "number"
-        ? rawFileSize
-        : Number.parseInt(String(rawFileSize ?? ""), 10);
-
     if (!fileName) {
-      return NextResponse.json({ error: "Dateiname fehlt." }, { status: 400 });
-    }
-
-    if (!fileType) {
-      return NextResponse.json({ error: "Dateityp fehlt." }, { status: 400 });
-    }
-
-    if (!isValidFolder(folder)) {
       return NextResponse.json(
-        { error: "Ungültiger Upload-Ordner." },
+        { error: "Dateiname fehlt." },
+        { status: 400 }
+      );
+    }
+
+    if (!contentType) {
+      return NextResponse.json(
+        { error: "Content-Type fehlt." },
         { status: 400 }
       );
     }
@@ -111,24 +112,42 @@ export async function POST(request: Request) {
       );
     }
 
-    if (fileSize > MAX_SINGLE_UPLOAD_SIZE) {
-      return NextResponse.json(
-        {
-          error:
-            "Die Datei ist zu groß für den direkten Upload. Bitte hierfür kleinere Dateien verwenden.",
-        },
-        { status: 400 }
-      );
-    }
+    if (kind === "image") {
+      if (
+        !ALLOWED_IMAGE_TYPES.includes(
+          contentType as (typeof ALLOWED_IMAGE_TYPES)[number]
+        )
+      ) {
+        return NextResponse.json(
+          { error: "Bildtyp nicht erlaubt." },
+          { status: 400 }
+        );
+      }
 
-    const allowedTypes: readonly string[] =
-      folder === "media" ? ALLOWED_IMAGE_TYPES : ALLOWED_FILE_TYPES;
+      if (fileSize > MAX_IMAGE_UPLOAD_SIZE) {
+        return NextResponse.json(
+          { error: "Bilder dürfen maximal 20 MB groß sein." },
+          { status: 400 }
+        );
+      }
+    } else {
+      if (
+        !ALLOWED_RELEASE_TYPES.includes(
+          contentType as (typeof ALLOWED_RELEASE_TYPES)[number]
+        )
+      ) {
+        return NextResponse.json(
+          { error: "Dateityp nicht erlaubt." },
+          { status: 400 }
+        );
+      }
 
-    if (!allowedTypes.includes(fileType)) {
-      return NextResponse.json(
-        { error: `Dateityp nicht erlaubt: ${fileType}` },
-        { status: 400 }
-      );
+      if (fileSize > MAX_RELEASE_UPLOAD_SIZE) {
+        return NextResponse.json(
+          { error: "Release-Dateien dürfen maximal 30 GB groß sein." },
+          { status: 400 }
+        );
+      }
     }
 
     const key = buildR2Key({
@@ -137,18 +156,64 @@ export async function POST(request: Request) {
       fileName,
     });
 
-    const result = await createPresignedUploadUrl({
+    if (fileSize <= DEFAULT_PART_SIZE) {
+      const single = await createPresignedUploadUrl({
+        key,
+        contentType,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        mode: "single",
+        key: single.key,
+        uploadUrl: single.uploadUrl,
+        publicUrl: single.publicUrl,
+      });
+    }
+
+    const multipart = await createMultipartUpload({
       key,
-      contentType: fileType,
-      expiresIn: 60 * 60,
+      contentType,
     });
 
-    return NextResponse.json(result, { status: 200 });
+    const totalParts = Math.ceil(fileSize / DEFAULT_PART_SIZE);
+
+    const parts = await Promise.all(
+      Array.from({ length: totalParts }, async (_, index) => {
+        const partNumber = index + 1;
+
+        const uploadUrl = await getMultipartPartUploadUrl({
+          key,
+          uploadId: multipart.uploadId,
+          partNumber,
+        });
+
+        return {
+          partNumber,
+          uploadUrl,
+        };
+      })
+    );
+
+    return NextResponse.json({
+      ok: true,
+      mode: "multipart",
+      key: multipart.key,
+      uploadId: multipart.uploadId,
+      publicUrl: multipart.publicUrl,
+      partSize: DEFAULT_PART_SIZE,
+      parts,
+    });
   } catch (error) {
-    console.error("uploads route presign error:", error);
+    console.error("Uploads route error:", error);
 
     return NextResponse.json(
-      { error: "Presigned URL konnte nicht erstellt werden." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Upload konnte nicht vorbereitet werden.",
+      },
       { status: 500 }
     );
   }
