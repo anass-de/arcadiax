@@ -50,12 +50,19 @@ type PartUrlResponse = {
   error?: string;
 };
 
+type CompleteResponse = {
+  ok?: boolean;
+  publicUrl?: string;
+  key?: string;
+  error?: string;
+};
+
 export type UploadResult = {
   uploadedUrl: string;
   key: string;
 };
 
-const MULTIPART_CONCURRENCY = 2;
+const MULTIPART_CONCURRENCY = 3;
 const PART_RETRY_COUNT = 3;
 const PART_TIMEOUT_MS = 60 * 60 * 1000;
 
@@ -203,7 +210,7 @@ async function getPartUploadUrl(payload: {
   partNumber: number;
   signal?: AbortSignal;
 }) {
-  const response = await fetch("/api/uploads/part-url", {
+  const response = await fetch("/api/uploads/multipart/part-url", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -231,7 +238,7 @@ async function completeUpload(payload: {
   parts: Array<{ ETag: string; PartNumber: number }>;
   signal?: AbortSignal;
 }) {
-  const response = await fetch("/api/uploads/complete", {
+  const response = await fetch("/api/uploads/multipart/complete", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -244,12 +251,7 @@ async function completeUpload(payload: {
     signal: payload.signal,
   });
 
-  const data = await parseJsonSafe<{
-    ok?: boolean;
-    publicUrl?: string;
-    key?: string;
-    error?: string;
-  }>(response);
+  const data = await parseJsonSafe<CompleteResponse>(response);
 
   if (!response.ok || !data?.ok || !data.publicUrl || !data.key) {
     throw new Error(
@@ -269,7 +271,7 @@ async function abortUpload(payload: {
   signal?: AbortSignal;
 }) {
   try {
-    await fetch("/api/uploads/abort", {
+    await fetch("/api/uploads/multipart/abort", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -281,7 +283,7 @@ async function abortUpload(payload: {
       signal: payload.signal,
     });
   } catch {
-      // ignorieren
+    // ignorieren
   }
 }
 

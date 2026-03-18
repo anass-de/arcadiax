@@ -23,16 +23,28 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as AbortBody;
+
     const key = body.key?.trim();
     const uploadId = body.uploadId?.trim();
 
-    if (!key || !uploadId) {
-      return NextResponse.json({ error: "key oder uploadId fehlt." }, { status: 400 });
+    if (!key) {
+      return NextResponse.json({ error: "key fehlt." }, { status: 400 });
     }
 
-    await abortMultipartUpload({ key, uploadId });
+    if (!uploadId) {
+      return NextResponse.json({ error: "uploadId fehlt." }, { status: 400 });
+    }
 
-    return NextResponse.json({ ok: true });
+    await abortMultipartUpload({
+      key,
+      uploadId,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      key,
+      uploadId,
+    });
   } catch (error) {
     console.error("Upload abort error:", error);
 

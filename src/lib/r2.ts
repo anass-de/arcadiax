@@ -2,11 +2,10 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
-  DeleteObjectCommand,
-  GetObjectCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
+  type CompletedPart,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -27,14 +26,8 @@ function assertEnv(value: string | undefined, name: string) {
 const accountId = assertEnv(R2_ACCOUNT_ID, "R2_ACCOUNT_ID");
 const accessKeyId = assertEnv(R2_ACCESS_KEY_ID, "R2_ACCESS_KEY_ID");
 const secretAccessKey = assertEnv(R2_SECRET_ACCESS_KEY, "R2_SECRET_ACCESS_KEY");
-const bucketName = assertEnv(R2_BUCKET_NAME, "R2_BUCKET_NAME");
-const publicBaseUrl = assertEnv(
-  R2_PUBLIC_BASE_URL,
-  "R2_PUBLIC_BASE_URL"
-).replace(/\/+$/, "");
-
-export const R2_BUCKET = bucketName;
-export const R2_PUBLIC_URL = publicBaseUrl;
+export const bucketName = assertEnv(R2_BUCKET_NAME, "R2_BUCKET_NAME");
+const publicBaseUrl = assertEnv(R2_PUBLIC_BASE_URL, "R2_PUBLIC_BASE_URL").replace(/\/+$/, "");
 
 export const r2Client = new S3Client({
   region: "auto",
@@ -45,9 +38,10 @@ export const r2Client = new S3Client({
   },
 });
 
-export function isValidFolder(
-  folder: string
-): folder is "releases" | "media" | "avatars" {
+export type UploadFolder = "releases" | "media" | "avatars";
+export type UploadKind = "image" | "release";
+
+export function isValidFolder(folder: string): folder is UploadFolder {
   return ["releases", "media", "avatars"].includes(folder);
 }
 
@@ -59,75 +53,73 @@ export function sanitizeSlug(value: string) {
       .trim()
       .toLowerCase()
       .replace(/[\s_-]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "item"
+      .replace(/^-+|-+$/g, "") || "upload"
   );
 }
 
-export function sanitizeFileName(fileName: string) {
+function sanitizeFileName(fileName: string) {
   const cleaned = fileName
-    .normalize("NFKD")
-    .replace(/[^\w.\-() ]+/g, "")
     .trim()
+    .replace(/[^\w.\-() ]+/g, "-")
     .replace(/\s+/g, "-");
 
-  return cleaned || `file-${Date.now()}`;
+  return cleaned || "file.bin";
+}
+
+function getExtension(fileName: string) {
+  const match = fileName.match(/(\.[a-zA-Z0-9]+)$/);
+  return match ? match[1].toLowerCase() : "";
 }
 
 export function buildR2Key(params: {
-  folder: "releases" | "media" | "avatars";
-  slug?: string | null;
+  folder: UploadFolder;
+  slug?: string;
   fileName: string;
+  kind: UploadKind;
+  userId?: string | null;
 }) {
-  const safeFileName = sanitizeFileName(params.fileName);
-  const safeSlug = params.slug ? sanitizeSlug(params.slug) : null;
-  const timestamp = Date.now();
+  const now = Date.now();
+  const cleanSlug = params.slug ? sanitizeSlug(params.slug) : "upload";
+  const cleanFileName = sanitizeFileName(params.fileName);
+  const ext = getExtension(cleanFileName);
 
-  if (safeSlug) {
-    return `${params.folder}/${safeSlug}/${timestamp}-${safeFileName}`;
+  const baseName =
+    cleanFileName.replace(/\.[^.]+$/, "") || `${params.kind}-${now}`;
+
+  const safeBaseName = baseName
+    .replace(/[^\w\-()]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  const finalName = `${now}-${params.kind}-${safeBaseName}${ext}`;
+  const userPart = params.userId ? `${params.userId}/` : "";
+
+  if (params.folder === "avatars") {
+    return `${params.folder}/${userPart}${finalName}`;
   }
 
-  return `${params.folder}/${timestamp}-${safeFileName}`;
+  return `${params.folder}/${userPart}${cleanSlug}/${finalName}`;
 }
 
-export function getPublicUrl(key: string) {
-  return `${R2_PUBLIC_URL}/${key}`;
+export function getPublicUrlForKey(key: string) {
+  return `${publicBaseUrl}/${key}`;
 }
 
-export function getR2KeyFromUrl(url: string) {
-  const normalizedPublicBaseUrl = R2_PUBLIC_URL.replace(/\/+$/, "");
-  const normalizedUrl = url.trim();
-
-  if (!normalizedUrl.startsWith(normalizedPublicBaseUrl)) {
-    return null;
-  }
-
-  const key = normalizedUrl
-    .slice(normalizedPublicBaseUrl.length)
-    .replace(/^\/+/, "");
-
-  return key || null;
-}
-
-export async function createPresignedUploadUrl(params: {
+export async function createSingleUploadUrl(params: {
   key: string;
   contentType: string;
-  expiresIn?: number;
 }) {
   const command = new PutObjectCommand({
-    Bucket: R2_BUCKET,
+    Bucket: bucketName,
     Key: params.key,
     ContentType: params.contentType,
   });
 
   const uploadUrl = await getSignedUrl(r2Client, command, {
-    expiresIn: params.expiresIn ?? 60 * 60,
+    expiresIn: 60 * 15,
   });
 
-  return {
-    key: params.key,
-    uploadUrl,
-    publicUrl: getPublicUrl(params.key),
-  };
+  return uploadUrl;
 }
 
 export async function createMultipartUpload(params: {
@@ -135,39 +127,34 @@ export async function createMultipartUpload(params: {
   contentType: string;
 }) {
   const command = new CreateMultipartUploadCommand({
-    Bucket: R2_BUCKET,
+    Bucket: bucketName,
     Key: params.key,
     ContentType: params.contentType,
   });
 
-  const response = await r2Client.send(command);
+  const result = await r2Client.send(command);
 
-  if (!response.UploadId) {
-    throw new Error("Multipart upload could not be created.");
+  if (!result.UploadId) {
+    throw new Error("Multipart-Upload konnte nicht initialisiert werden.");
   }
 
-  return {
-    key: params.key,
-    uploadId: response.UploadId,
-    publicUrl: getPublicUrl(params.key),
-  };
+  return result.UploadId;
 }
 
 export async function getMultipartPartUploadUrl(params: {
   key: string;
   uploadId: string;
   partNumber: number;
-  expiresIn?: number;
 }) {
   const command = new UploadPartCommand({
-    Bucket: R2_BUCKET,
+    Bucket: bucketName,
     Key: params.key,
     UploadId: params.uploadId,
     PartNumber: params.partNumber,
   });
 
   return getSignedUrl(r2Client, command, {
-    expiresIn: params.expiresIn ?? 60 * 60,
+    expiresIn: 60 * 15,
   });
 }
 
@@ -176,88 +163,39 @@ export async function completeMultipartUpload(params: {
   uploadId: string;
   parts: Array<{ ETag: string; PartNumber: number }>;
 }) {
-  const normalizedParts = params.parts
-    .slice()
+  const completedParts: CompletedPart[] = params.parts
+    .filter((part) => part.ETag && Number.isInteger(part.PartNumber))
     .sort((a, b) => a.PartNumber - b.PartNumber)
     .map((part) => ({
-      ETag: part.ETag.replaceAll('"', ""),
+      ETag: part.ETag,
       PartNumber: part.PartNumber,
     }));
 
-  const command = new CompleteMultipartUploadCommand({
-    Bucket: R2_BUCKET,
-    Key: params.key,
-    UploadId: params.uploadId,
-    MultipartUpload: {
-      Parts: normalizedParts,
-    },
-  });
+  if (completedParts.length === 0) {
+    throw new Error("Keine gültigen Parts zum Abschließen vorhanden.");
+  }
 
-  await r2Client.send(command);
-
-  return {
-    key: params.key,
-    publicUrl: getPublicUrl(params.key),
-  };
+  await r2Client.send(
+    new CompleteMultipartUploadCommand({
+      Bucket: bucketName,
+      Key: params.key,
+      UploadId: params.uploadId,
+      MultipartUpload: {
+        Parts: completedParts,
+      },
+    })
+  );
 }
 
 export async function abortMultipartUpload(params: {
   key: string;
   uploadId: string;
 }) {
-  const command = new AbortMultipartUploadCommand({
-    Bucket: R2_BUCKET,
-    Key: params.key,
-    UploadId: params.uploadId,
-  });
-
-  await r2Client.send(command);
-}
-
-export async function deleteObjectByKey(key: string) {
-  const normalizedKey = key.trim();
-
-  if (!normalizedKey) {
-    return;
-  }
-
-  const command = new DeleteObjectCommand({
-    Bucket: R2_BUCKET,
-    Key: normalizedKey,
-  });
-
-  await r2Client.send(command);
-}
-
-export async function deleteR2ObjectsFromUrls(
-  urls: Array<string | null | undefined>
-) {
-  const uniqueKeys = Array.from(
-    new Set(
-      urls
-        .filter((url): url is string => typeof url === "string" && !!url.trim())
-        .map((url) => getR2KeyFromUrl(url))
-        .filter((key): key is string => typeof key === "string" && !!key.trim())
-    )
+  await r2Client.send(
+    new AbortMultipartUploadCommand({
+      Bucket: bucketName,
+      Key: params.key,
+      UploadId: params.uploadId,
+    })
   );
-
-  if (!uniqueKeys.length) {
-    return;
-  }
-
-  await Promise.all(uniqueKeys.map((key) => deleteObjectByKey(key)));
-}
-
-export async function createPresignedDownloadUrl(params: {
-  key: string;
-  expiresIn?: number;
-}) {
-  const command = new GetObjectCommand({
-    Bucket: R2_BUCKET,
-    Key: params.key,
-  });
-
-  return getSignedUrl(r2Client, command, {
-    expiresIn: params.expiresIn ?? 60 * 60,
-  });
 }
