@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useMemo, useRef, useState } from "react";
 import { ImageIcon, Loader2, Plus, Upload, XCircle } from "lucide-react";
 
-import { uploadFileToR2 } from "@/lib/upload-file";
+import { uploadFileToR2, type UploadMetrics } from "@/lib/upload-file";
 
 type UploadState = {
   isUploading: boolean;
@@ -13,6 +13,10 @@ type UploadState = {
   fileName: string | null;
   uploadedUrl: string | null;
   error: string | null;
+  uploadedBytes: number;
+  totalBytes: number;
+  speedBytesPerSecond: number;
+  remainingSeconds: number | null;
 };
 
 const initialUploadState: UploadState = {
@@ -21,6 +25,10 @@ const initialUploadState: UploadState = {
   fileName: null,
   uploadedUrl: null,
   error: null,
+  uploadedBytes: 0,
+  totalBytes: 0,
+  speedBytesPerSecond: 0,
+  remainingSeconds: null,
 };
 
 const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024;
@@ -31,7 +39,7 @@ const ALLOWED_IMAGE_TYPES = [
   "image/png",
   "image/webp",
   "image/gif",
-];
+] as const;
 
 const ALLOWED_RELEASE_TYPES = [
   "application/zip",
@@ -41,7 +49,7 @@ const ALLOWED_RELEASE_TYPES = [
   "application/pdf",
   "application/x-7z-compressed",
   "application/vnd.rar",
-];
+] as const;
 
 function slugify(value: string) {
   return (
@@ -53,6 +61,48 @@ function slugify(value: string) {
       .replace(/[\s_-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "release"
   );
+}
+
+function formatBytes(bytes: number) {
+  if (bytes <= 0) return "0 B";
+
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(value >= 100 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatSpeed(bytesPerSecond: number) {
+  if (!bytesPerSecond || bytesPerSecond <= 0) return "0 B/s";
+  return `${formatBytes(bytesPerSecond)}/s`;
+}
+
+function formatRemainingTime(seconds: number | null) {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) {
+    return "—";
+  }
+
+  if (seconds < 60) {
+    return `${Math.ceil(seconds)} s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const restSeconds = Math.ceil(seconds % 60);
+
+  if (minutes < 60) {
+    return `${minutes} min ${restSeconds} s`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+
+  return `${hours} h ${restMinutes} min`;
 }
 
 export default function NewReleaseForm() {
@@ -74,6 +124,30 @@ export default function NewReleaseForm() {
 
   const slug = useMemo(() => slugify(title), [title]);
 
+  function applyMetrics(
+    fileName: string,
+    metrics: UploadMetrics,
+    target: "image" | "release"
+  ) {
+    const updater = (prev: UploadState): UploadState => ({
+      ...prev,
+      isUploading: true,
+      fileName,
+      progress: metrics.progress,
+      uploadedBytes: metrics.uploadedBytes,
+      totalBytes: metrics.totalBytes,
+      speedBytesPerSecond: metrics.speedBytesPerSecond,
+      remainingSeconds: metrics.remainingSeconds,
+    });
+
+    if (target === "image") {
+      setImageUpload(updater);
+      return;
+    }
+
+    setReleaseUpload(updater);
+  }
+
   function resetUpload(which: "image" | "release") {
     if (which === "image") {
       imageAbortRef.current?.abort();
@@ -91,9 +165,11 @@ export default function NewReleaseForm() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type as (typeof ALLOWED_IMAGE_TYPES)[number])) {
       setImageUpload({
         ...initialUploadState,
+        fileName: file.name,
+        totalBytes: file.size,
         error: "Ungültiger Bildtyp. Erlaubt: JPG, PNG, WEBP, GIF.",
       });
       return;
@@ -102,6 +178,8 @@ export default function NewReleaseForm() {
     if (file.size > MAX_IMAGE_UPLOAD_SIZE) {
       setImageUpload({
         ...initialUploadState,
+        fileName: file.name,
+        totalBytes: file.size,
         error: "Bild ist zu groß. Maximal 20 MB.",
       });
       return;
@@ -112,11 +190,10 @@ export default function NewReleaseForm() {
     imageAbortRef.current = controller;
 
     setImageUpload({
+      ...initialUploadState,
       isUploading: true,
-      progress: 0,
       fileName: file.name,
-      uploadedUrl: null,
-      error: null,
+      totalBytes: file.size,
     });
 
     try {
@@ -126,33 +203,29 @@ export default function NewReleaseForm() {
         slug,
         kind: "image",
         signal: controller.signal,
-        onProgress: (progress) => {
-          setImageUpload((prev) => ({
-            ...prev,
-            isUploading: true,
-            progress,
-            fileName: file.name,
-          }));
-        },
+        onProgress: (metrics) => applyMetrics(file.name, metrics, "image"),
       });
 
       setImageUrl(result.uploadedUrl);
-      setImageUpload({
+      setImageUpload((prev) => ({
+        ...prev,
         isUploading: false,
         progress: 100,
-        fileName: file.name,
         uploadedUrl: result.uploadedUrl,
         error: null,
-      });
+        uploadedBytes: prev.totalBytes || file.size,
+        totalBytes: prev.totalBytes || file.size,
+        remainingSeconds: 0,
+      }));
     } catch (error) {
-      setImageUpload({
+      setImageUpload((prev) => ({
+        ...prev,
         isUploading: false,
         progress: 0,
-        fileName: file.name,
         uploadedUrl: null,
         error:
           error instanceof Error ? error.message : "Bild konnte nicht hochgeladen werden.",
-      });
+      }));
     }
   }
 
@@ -162,9 +235,15 @@ export default function NewReleaseForm() {
 
     const detectedType = file.type || "application/octet-stream";
 
-    if (!ALLOWED_RELEASE_TYPES.includes(detectedType)) {
+    if (
+      !ALLOWED_RELEASE_TYPES.includes(
+        detectedType as (typeof ALLOWED_RELEASE_TYPES)[number]
+      )
+    ) {
       setReleaseUpload({
         ...initialUploadState,
+        fileName: file.name,
+        totalBytes: file.size,
         error: "Ungültiger Dateityp. Erlaubt: ZIP, PDF, 7Z, RAR.",
       });
       return;
@@ -173,6 +252,8 @@ export default function NewReleaseForm() {
     if (file.size > MAX_RELEASE_UPLOAD_SIZE) {
       setReleaseUpload({
         ...initialUploadState,
+        fileName: file.name,
+        totalBytes: file.size,
         error: "Datei ist zu groß. Maximal 30 GB.",
       });
       return;
@@ -183,11 +264,10 @@ export default function NewReleaseForm() {
     releaseAbortRef.current = controller;
 
     setReleaseUpload({
+      ...initialUploadState,
       isUploading: true,
-      progress: 0,
       fileName: file.name,
-      uploadedUrl: null,
-      error: null,
+      totalBytes: file.size,
     });
 
     try {
@@ -197,33 +277,29 @@ export default function NewReleaseForm() {
         slug,
         kind: "release",
         signal: controller.signal,
-        onProgress: (progress) => {
-          setReleaseUpload((prev) => ({
-            ...prev,
-            isUploading: true,
-            progress,
-            fileName: file.name,
-          }));
-        },
+        onProgress: (metrics) => applyMetrics(file.name, metrics, "release"),
       });
 
       setDownloadUrl(result.uploadedUrl);
-      setReleaseUpload({
+      setReleaseUpload((prev) => ({
+        ...prev,
         isUploading: false,
         progress: 100,
-        fileName: file.name,
         uploadedUrl: result.uploadedUrl,
         error: null,
-      });
+        uploadedBytes: prev.totalBytes || file.size,
+        totalBytes: prev.totalBytes || file.size,
+        remainingSeconds: 0,
+      }));
     } catch (error) {
-      setReleaseUpload({
+      setReleaseUpload((prev) => ({
+        ...prev,
         isUploading: false,
         progress: 0,
-        fileName: file.name,
         uploadedUrl: null,
         error:
           error instanceof Error ? error.message : "Datei konnte nicht hochgeladen werden.",
-      });
+      }));
     }
   }
 
@@ -289,6 +365,38 @@ export default function NewReleaseForm() {
     }
   }
 
+  function renderStats(upload: UploadState, accent: "violet" | "cyan") {
+    if (!upload.fileName) return null;
+
+    const barClass = accent === "violet" ? "bg-violet-400" : "bg-cyan-400";
+
+    return (
+      <div className="rounded-2xl bg-white/5 px-4 py-3 text-white/80">
+        <div className="font-medium">{upload.fileName}</div>
+
+        {(upload.isUploading || upload.progress > 0 || upload.uploadedUrl) && (
+          <>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className={`h-full rounded-full transition-all ${barClass}`}
+                style={{ width: `${upload.progress}%` }}
+              />
+            </div>
+
+            <div className="mt-2 grid gap-1 text-xs text-white/60 sm:grid-cols-2">
+              <div>{upload.progress}% hochgeladen</div>
+              <div>
+                {formatBytes(upload.uploadedBytes)} / {formatBytes(upload.totalBytes)}
+              </div>
+              <div>Speed: {formatSpeed(upload.speedBytesPerSecond)}</div>
+              <div>Restzeit: {formatRemainingTime(upload.remainingSeconds)}</div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -305,6 +413,7 @@ export default function NewReleaseForm() {
         <label className="space-y-2">
           <span className="text-sm font-medium text-white">Titel</span>
           <input
+            name="title"
             type="text"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
@@ -316,6 +425,7 @@ export default function NewReleaseForm() {
         <label className="space-y-2">
           <span className="text-sm font-medium text-white">Version</span>
           <input
+            name="version"
             type="text"
             value={version}
             onChange={(event) => setVersion(event.target.value)}
@@ -328,6 +438,7 @@ export default function NewReleaseForm() {
       <label className="block space-y-2">
         <span className="text-sm font-medium text-white">Beschreibung</span>
         <textarea
+          name="description"
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           placeholder="Beschreibung der Release ..."
@@ -349,30 +460,19 @@ export default function NewReleaseForm() {
           </div>
 
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-8 text-center transition hover:border-violet-400/50 hover:bg-white/10">
-            <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+            <input
+              name="image"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageChange}
+            />
             <Upload className="mb-3 h-6 w-6 text-white/70" />
             <span className="text-sm font-medium text-white">Bild auswählen</span>
           </label>
 
           <div className="mt-4 space-y-3 text-sm">
-            {imageUpload.fileName && (
-              <div className="rounded-2xl bg-white/5 px-4 py-3 text-white/80">
-                <div className="font-medium">{imageUpload.fileName}</div>
-                {(imageUpload.isUploading || imageUpload.progress > 0) && (
-                  <div className="mt-2">
-                    <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full bg-violet-400 transition-all"
-                        style={{ width: `${imageUpload.progress}%` }}
-                      />
-                    </div>
-                    <div className="mt-1 text-xs text-white/60">
-                      {imageUpload.progress}% hochgeladen
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            {renderStats(imageUpload, "violet")}
 
             {imageUpload.uploadedUrl && (
               <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-emerald-200">
@@ -412,6 +512,7 @@ export default function NewReleaseForm() {
 
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-8 text-center transition hover:border-cyan-400/50 hover:bg-white/10">
             <input
+              name="releaseFile"
               type="file"
               accept=".zip,.pdf,.7z,.rar,application/zip,application/pdf,application/x-7z-compressed,application/vnd.rar,application/octet-stream"
               className="hidden"
@@ -422,24 +523,7 @@ export default function NewReleaseForm() {
           </label>
 
           <div className="mt-4 space-y-3 text-sm">
-            {releaseUpload.fileName && (
-              <div className="rounded-2xl bg-white/5 px-4 py-3 text-white/80">
-                <div className="font-medium">{releaseUpload.fileName}</div>
-                {(releaseUpload.isUploading || releaseUpload.progress > 0) && (
-                  <div className="mt-2">
-                    <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full bg-cyan-400 transition-all"
-                        style={{ width: `${releaseUpload.progress}%` }}
-                      />
-                    </div>
-                    <div className="mt-1 text-xs text-white/60">
-                      {releaseUpload.progress}% hochgeladen
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            {renderStats(releaseUpload, "cyan")}
 
             {releaseUpload.uploadedUrl && (
               <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-emerald-200">
@@ -453,7 +537,9 @@ export default function NewReleaseForm() {
               </div>
             )}
 
-            {(releaseUpload.fileName || releaseUpload.uploadedUrl || releaseUpload.isUploading) && (
+            {(releaseUpload.fileName ||
+              releaseUpload.uploadedUrl ||
+              releaseUpload.isUploading) && (
               <button
                 type="button"
                 onClick={() => resetUpload("release")}
@@ -471,6 +557,7 @@ export default function NewReleaseForm() {
         <label className="space-y-2">
           <span className="text-sm font-medium text-white">Bild-URL</span>
           <input
+            name="imageUrl"
             type="url"
             value={imageUrl}
             onChange={(event) => setImageUrl(event.target.value)}
@@ -482,6 +569,7 @@ export default function NewReleaseForm() {
         <label className="space-y-2">
           <span className="text-sm font-medium text-white">Download-URL</span>
           <input
+            name="downloadUrl"
             type="url"
             value={downloadUrl}
             onChange={(event) => setDownloadUrl(event.target.value)}
@@ -514,7 +602,11 @@ export default function NewReleaseForm() {
           disabled={submitting || imageUpload.isUploading || releaseUpload.isUploading}
           className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-3 font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          {submitting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Plus className="h-4 w-4" />
+          )}
           Release erstellen
         </button>
 

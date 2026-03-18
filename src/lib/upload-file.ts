@@ -1,11 +1,19 @@
 export type UploadKind = "image" | "release";
 
+export type UploadMetrics = {
+  progress: number;
+  uploadedBytes: number;
+  totalBytes: number;
+  speedBytesPerSecond: number;
+  remainingSeconds: number | null;
+};
+
 export type UploadFileOptions = {
   file: File;
   folder: "releases" | "media" | "avatars";
   slug?: string;
   kind: UploadKind;
-  onProgress?: (progress: number) => void;
+  onProgress?: (metrics: UploadMetrics) => void;
   signal?: AbortSignal;
 };
 
@@ -44,6 +52,9 @@ export type UploadResult = {
   key: string;
 };
 
+const MULTIPART_CONCURRENCY = 3;
+const PART_RETRY_COUNT = 3;
+
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
@@ -56,17 +67,70 @@ async function parseJsonSafe<T>(response: Response): Promise<T | null> {
   }
 }
 
+function createMetricsEmitter(
+  totalBytes: number,
+  onProgress?: (metrics: UploadMetrics) => void
+) {
+  const startedAt = Date.now();
+  let uploadedBytes = 0;
+  const perPartLoaded = new Map<number, number>();
+
+  function emit() {
+    if (!onProgress) return;
+
+    const elapsedSeconds = Math.max((Date.now() - startedAt) / 1000, 0.001);
+    const speedBytesPerSecond = uploadedBytes / elapsedSeconds;
+    const remainingBytes = Math.max(totalBytes - uploadedBytes, 0);
+    const remainingSeconds =
+      speedBytesPerSecond > 0 ? remainingBytes / speedBytesPerSecond : null;
+
+    const progress =
+      totalBytes > 0
+        ? Math.min(100, Math.round((uploadedBytes / totalBytes) * 100))
+        : 0;
+
+    onProgress({
+      progress,
+      uploadedBytes,
+      totalBytes,
+      speedBytesPerSecond,
+      remainingSeconds,
+    });
+  }
+
+  return {
+    setSingleLoaded(bytes: number) {
+      uploadedBytes = Math.min(bytes, totalBytes);
+      emit();
+    },
+    setPartLoaded(partNumber: number, bytes: number) {
+      perPartLoaded.set(partNumber, Math.max(0, bytes));
+      uploadedBytes = Array.from(perPartLoaded.values()).reduce(
+        (sum, value) => sum + value,
+        0
+      );
+      emit();
+    },
+    markDone() {
+      uploadedBytes = totalBytes;
+      emit();
+    },
+  };
+}
+
 function uploadWithXhr(params: {
   url: string;
   blob: Blob;
   contentType?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
-  onProgress?: (progress: number) => void;
+  onProgressBytes?: (loadedBytes: number, totalBytes: number) => void;
 }) {
   return new Promise<XMLHttpRequest>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+
     xhr.open("PUT", params.url, true);
+    xhr.withCredentials = false;
     xhr.timeout = params.timeoutMs ?? 60_000;
 
     if (params.contentType) {
@@ -74,11 +138,10 @@ function uploadWithXhr(params: {
     }
 
     xhr.upload.onprogress = (event) => {
-      if (!params.onProgress) return;
-      if (!event.lengthComputable || event.total <= 0) return;
+      if (!params.onProgressBytes) return;
+      if (!event.lengthComputable) return;
 
-      const progress = Math.round((event.loaded / event.total) * 100);
-      params.onProgress(progress);
+      params.onProgressBytes(event.loaded, event.total);
     };
 
     xhr.onload = () => resolve(xhr);
@@ -196,13 +259,37 @@ async function abortUpload(payload: {
       signal: payload.signal,
     });
   } catch {
-    // absichtlich ignorieren
+    // ignorieren
   }
+}
+
+async function retry<T>(fn: () => Promise<T>, attempts: number) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      if (isAbortError(error)) {
+        throw error;
+      }
+
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 export async function uploadFileToR2(
   options: UploadFileOptions
 ): Promise<UploadResult> {
+  const metrics = createMetricsEmitter(options.file.size, options.onProgress);
+
   let start: StartResponse;
 
   try {
@@ -229,7 +316,9 @@ export async function uploadFileToR2(
         contentType: options.file.type || "application/octet-stream",
         signal: options.signal,
         timeoutMs: 60_000,
-        onProgress: options.onProgress,
+        onProgressBytes: (loadedBytes) => {
+          metrics.setSingleLoaded(loadedBytes);
+        },
       });
     } catch (error) {
       if (isAbortError(error)) {
@@ -245,7 +334,7 @@ export async function uploadFileToR2(
       throw new Error(`Single Upload fehlgeschlagen (${xhr.status}).`);
     }
 
-    options.onProgress?.(100);
+    metrics.markDone();
 
     return {
       uploadedUrl: start.publicUrl,
@@ -256,60 +345,70 @@ export async function uploadFileToR2(
   const { uploadId, key, publicUrl, parts, partSize } = start;
   const completedParts: Array<{ ETag: string; PartNumber: number }> = [];
 
-  try {
-    for (let index = 0; index < parts.length; index += 1) {
-      const part = parts[index];
-      const startByte = index * partSize;
-      const endByte = Math.min(startByte + partSize, options.file.size);
-      const chunk = options.file.slice(startByte, endByte);
+  const uploadPart = async (part: { partNumber: number; uploadUrl: string }) => {
+    const index = part.partNumber - 1;
+    const startByte = index * partSize;
+    const endByte = Math.min(startByte + partSize, options.file.size);
+    const chunk = options.file.slice(startByte, endByte);
 
-      const xhr = await uploadWithXhr({
-        url: part.uploadUrl,
-        blob: chunk,
-        signal: options.signal,
-        timeoutMs: 5 * 60_000,
-        onProgress: (partProgress) => {
-          const completedBytes = startByte;
-          const currentPartBytes = Math.round(
-            ((endByte - startByte) * partProgress) / 100
-          );
-          const totalUploaded = completedBytes + currentPartBytes;
-          const overallProgress = Math.min(
-            100,
-            Math.round((totalUploaded / options.file.size) * 100)
-          );
-          options.onProgress?.(overallProgress);
-        },
-      });
+    const xhr = await retry(
+      async () =>
+        uploadWithXhr({
+          url: part.uploadUrl,
+          blob: chunk,
+          signal: options.signal,
+          timeoutMs: 5 * 60_000,
+          onProgressBytes: (loadedBytes) => {
+            metrics.setPartLoaded(part.partNumber, loadedBytes);
+          },
+        }),
+      PART_RETRY_COUNT
+    );
 
-      if (xhr.status < 200 || xhr.status >= 300) {
-        throw new Error(`Part ${part.partNumber} fehlgeschlagen (${xhr.status}).`);
-      }
-
-      const rawETag =
-        xhr.getResponseHeader("etag") ||
-        xhr.getResponseHeader("ETag") ||
-        xhr.getResponseHeader("Etag");
-
-      if (!rawETag) {
-        throw new Error(`ETag für Part ${part.partNumber} fehlt.`);
-      }
-
-      completedParts.push({
-        ETag: rawETag.replaceAll('"', ""),
-        PartNumber: part.partNumber,
-      });
-
-      const progress = Math.round(((index + 1) / parts.length) * 100);
-      options.onProgress?.(progress);
+    if (xhr.status < 200 || xhr.status >= 300) {
+      throw new Error(`Part ${part.partNumber} fehlgeschlagen (${xhr.status}).`);
     }
+
+    const rawETag =
+      xhr.getResponseHeader("etag") ||
+      xhr.getResponseHeader("ETag") ||
+      xhr.getResponseHeader("Etag");
+
+    if (!rawETag) {
+      throw new Error(`ETag für Part ${part.partNumber} fehlt.`);
+    }
+
+    completedParts.push({
+      ETag: rawETag.replaceAll('"', ""),
+      PartNumber: part.partNumber,
+    });
+
+    metrics.setPartLoaded(part.partNumber, chunk.size);
+  };
+
+  try {
+    let cursor = 0;
+
+    const workers = Array.from({
+      length: Math.min(MULTIPART_CONCURRENCY, parts.length),
+    }).map(async () => {
+      while (cursor < parts.length) {
+        const currentIndex = cursor;
+        cursor += 1;
+        await uploadPart(parts[currentIndex]);
+      }
+    });
+
+    await Promise.all(workers);
 
     const finished = await completeUpload({
       key,
       uploadId,
-      parts: completedParts,
+      parts: completedParts.sort((a, b) => a.PartNumber - b.PartNumber),
       signal: options.signal,
     });
+
+    metrics.markDone();
 
     return finished ?? { uploadedUrl: publicUrl, key };
   } catch (error) {
