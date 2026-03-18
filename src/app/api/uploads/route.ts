@@ -12,8 +12,6 @@ import {
 
 type SessionUser = {
   id?: string | null;
-  role?: string | null;
-  email?: string | null;
 };
 
 type UploadKind = "image" | "release";
@@ -27,9 +25,9 @@ type UploadBody = {
   kind?: UploadKind;
 };
 
-const DEFAULT_PART_SIZE = 10 * 1024 * 1024; // 10 MB
-const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024; // 20 MB
-const MAX_RELEASE_UPLOAD_SIZE = 30 * 1024 * 1024 * 1024; // 30 GB
+const DEFAULT_PART_SIZE = 10 * 1024 * 1024;
+const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024;
+const MAX_RELEASE_UPLOAD_SIZE = 30 * 1024 * 1024 * 1024;
 
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
@@ -69,10 +67,7 @@ export async function POST(request: Request) {
     const user = session?.user as SessionUser | undefined;
 
     if (!user?.id) {
-      return NextResponse.json(
-        { error: "Nicht eingeloggt." },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Nicht eingeloggt." }, { status: 401 });
     }
 
     const body = (await request.json()) as UploadBody;
@@ -85,31 +80,19 @@ export async function POST(request: Request) {
     const fileSize = parseFileSize(body.fileSize);
 
     if (!folder || !isValidFolder(folder)) {
-      return NextResponse.json(
-        { error: "Ungültiger Upload-Ordner." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Ungültiger Upload-Ordner." }, { status: 400 });
     }
 
     if (!fileName) {
-      return NextResponse.json(
-        { error: "Dateiname fehlt." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Dateiname fehlt." }, { status: 400 });
     }
 
     if (!contentType) {
-      return NextResponse.json(
-        { error: "Content-Type fehlt." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Content-Type fehlt." }, { status: 400 });
     }
 
     if (!Number.isFinite(fileSize) || fileSize <= 0) {
-      return NextResponse.json(
-        { error: "Ungültige Dateigröße." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Ungültige Dateigröße." }, { status: 400 });
     }
 
     if (kind === "image") {
@@ -118,10 +101,7 @@ export async function POST(request: Request) {
           contentType as (typeof ALLOWED_IMAGE_TYPES)[number]
         )
       ) {
-        return NextResponse.json(
-          { error: "Bildtyp nicht erlaubt." },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Bildtyp nicht erlaubt." }, { status: 400 });
       }
 
       if (fileSize > MAX_IMAGE_UPLOAD_SIZE) {
@@ -136,10 +116,7 @@ export async function POST(request: Request) {
           contentType as (typeof ALLOWED_RELEASE_TYPES)[number]
         )
       ) {
-        return NextResponse.json(
-          { error: "Dateityp nicht erlaubt." },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Dateityp nicht erlaubt." }, { status: 400 });
       }
 
       if (fileSize > MAX_RELEASE_UPLOAD_SIZE) {
@@ -181,7 +158,6 @@ export async function POST(request: Request) {
     const parts = await Promise.all(
       Array.from({ length: totalParts }, async (_, index) => {
         const partNumber = index + 1;
-
         const uploadUrl = await getMultipartPartUploadUrl({
           key,
           uploadId: multipart.uploadId,

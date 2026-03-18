@@ -38,7 +38,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Multipart-Upload konnte nicht abgebrochen werden.",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Multipart-Upload konnte nicht abgebrochen werden.",
       },
       { status: 500 }
     );

@@ -59,7 +59,7 @@ async function parseJsonSafe<T>(response: Response): Promise<T | null> {
 async function putWithTimeout(
   url: string,
   blob: Blob,
-  contentType: string,
+  contentType?: string,
   signal?: AbortSignal,
   timeoutMs = 60_000
 ) {
@@ -70,12 +70,16 @@ async function putWithTimeout(
   signal?.addEventListener("abort", abortHandler);
 
   try {
+    const headers: HeadersInit = {};
+
+    if (contentType) {
+      headers["Content-Type"] = contentType;
+    }
+
     const response = await fetch(url, {
       method: "PUT",
       body: blob,
-      headers: {
-        "Content-Type": contentType,
-      },
+      headers,
       signal: controller.signal,
     });
 
@@ -241,7 +245,7 @@ export async function uploadFileToR2(
       const uploadResponse = await putWithTimeout(
         part.uploadUrl,
         chunk,
-        options.file.type || "application/octet-stream",
+        undefined,
         options.signal,
         5 * 60_000
       );

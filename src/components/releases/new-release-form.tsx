@@ -23,8 +23,8 @@ const initialUploadState: UploadState = {
   error: null,
 };
 
-const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024; // 20 MB
-const MAX_RELEASE_UPLOAD_SIZE = 30 * 1024 * 1024 * 1024; // 30 GB
+const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024;
+const MAX_RELEASE_UPLOAD_SIZE = 30 * 1024 * 1024 * 1024;
 
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
@@ -53,20 +53,6 @@ function slugify(value: string) {
       .replace(/[\s_-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "release"
   );
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let size = bytes / 1024;
-  let unitIndex = 0;
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${size.toFixed(size >= 100 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 export default function NewReleaseForm() {
@@ -174,10 +160,12 @@ export default function NewReleaseForm() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!ALLOWED_RELEASE_TYPES.includes(file.type || "application/octet-stream")) {
+    const detectedType = file.type || "application/octet-stream";
+
+    if (!ALLOWED_RELEASE_TYPES.includes(detectedType)) {
       setReleaseUpload({
         ...initialUploadState,
-        error: "Ungültiger Dateityp. Erlaubt: zip, pdf, 7z, rar, binär.",
+        error: "Ungültiger Dateityp. Erlaubt: ZIP, PDF, 7Z, RAR.",
       });
       return;
     }

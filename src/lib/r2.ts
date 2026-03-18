@@ -28,10 +28,7 @@ const accountId = assertEnv(R2_ACCOUNT_ID, "R2_ACCOUNT_ID");
 const accessKeyId = assertEnv(R2_ACCESS_KEY_ID, "R2_ACCESS_KEY_ID");
 const secretAccessKey = assertEnv(R2_SECRET_ACCESS_KEY, "R2_SECRET_ACCESS_KEY");
 const bucketName = assertEnv(R2_BUCKET_NAME, "R2_BUCKET_NAME");
-const publicBaseUrl = assertEnv(
-  R2_PUBLIC_BASE_URL,
-  "R2_PUBLIC_BASE_URL"
-).replace(/\/+$/, "");
+const publicBaseUrl = assertEnv(R2_PUBLIC_BASE_URL, "R2_PUBLIC_BASE_URL").replace(/\/+$/, "");
 
 export const R2_BUCKET = bucketName;
 export const R2_PUBLIC_URL = publicBaseUrl;
@@ -166,7 +163,7 @@ export async function getMultipartPartUploadUrl(params: {
     PartNumber: params.partNumber,
   });
 
-  return await getSignedUrl(r2Client, command, {
+  return getSignedUrl(r2Client, command, {
     expiresIn: params.expiresIn ?? 60 * 10,
   });
 }
@@ -257,7 +254,7 @@ export async function createPresignedDownloadUrl(params: {
     Key: params.key,
   });
 
-  return await getSignedUrl(r2Client, command, {
+  return getSignedUrl(r2Client, command, {
     expiresIn: params.expiresIn ?? 60 * 10,
   });
 }
