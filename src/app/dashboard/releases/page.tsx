@@ -268,7 +268,14 @@ export default async function DashboardReleasesPage() {
     ]);
 
     try {
-      await deleteR2ObjectsFromUrls([existing.fileUrl, existing.imageUrl]);
+      const urlsToDelete = [existing.fileUrl, existing.imageUrl].filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0
+      );
+
+      if (urlsToDelete.length > 0) {
+        await deleteR2ObjectsFromUrls(urlsToDelete);
+      }
     } catch (error) {
       console.error("R2 cleanup failed after release delete:", error);
     }
