@@ -59,21 +59,26 @@ async function parseJsonSafe<T>(response: Response): Promise<T | null> {
 async function putWithTimeout(
   url: string,
   blob: Blob,
-  contentType?: string,
-  signal?: AbortSignal,
-  timeoutMs = 60_000
+  options?: {
+    contentType?: string;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  }
 ) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    options?.timeoutMs ?? 60_000
+  );
 
   const abortHandler = () => controller.abort();
-  signal?.addEventListener("abort", abortHandler);
+  options?.signal?.addEventListener("abort", abortHandler);
 
   try {
     const headers: HeadersInit = {};
 
-    if (contentType) {
-      headers["Content-Type"] = contentType;
+    if (options?.contentType) {
+      headers["Content-Type"] = options.contentType;
     }
 
     const response = await fetch(url, {
@@ -86,7 +91,7 @@ async function putWithTimeout(
     return response;
   } finally {
     clearTimeout(timeout);
-    signal?.removeEventListener("abort", abortHandler);
+    options?.signal?.removeEventListener("abort", abortHandler);
   }
 }
 
@@ -151,7 +156,9 @@ async function completeUpload(payload: {
   }>(response);
 
   if (!response.ok || !data?.ok || !data.publicUrl || !data.key) {
-    throw new Error(data?.error || "Multipart-Upload konnte nicht abgeschlossen werden.");
+    throw new Error(
+      data?.error || "Multipart-Upload konnte nicht abgeschlossen werden."
+    );
   }
 
   return {
@@ -205,23 +212,25 @@ export async function uploadFileToR2(
     let uploadResponse: Response;
 
     try {
-      uploadResponse = await putWithTimeout(
-        start.uploadUrl,
-        options.file,
-        options.file.type || "application/octet-stream",
-        options.signal,
-        60_000
-      );
+      uploadResponse = await putWithTimeout(start.uploadUrl, options.file, {
+        contentType: options.file.type || "application/octet-stream",
+        signal: options.signal,
+        timeoutMs: 60_000,
+      });
     } catch (error) {
       if (isAbortError(error)) {
-        throw new Error("Upload wurde abgebrochen oder hat das Zeitlimit überschritten.");
+        throw new Error(
+          "Upload wurde abgebrochen oder hat das Zeitlimit überschritten."
+        );
       }
 
       throw error;
     }
 
     if (!uploadResponse.ok) {
-      throw new Error(`Single Upload fehlgeschlagen (${uploadResponse.status}).`);
+      throw new Error(
+        `Single Upload fehlgeschlagen (${uploadResponse.status}).`
+      );
     }
 
     options.onProgress?.(100);
@@ -242,13 +251,10 @@ export async function uploadFileToR2(
       const endByte = Math.min(startByte + partSize, options.file.size);
       const chunk = options.file.slice(startByte, endByte);
 
-      const uploadResponse = await putWithTimeout(
-        part.uploadUrl,
-        chunk,
-        undefined,
-        options.signal,
-        5 * 60_000
-      );
+      const uploadResponse = await putWithTimeout(part.uploadUrl, chunk, {
+        signal: options.signal,
+        timeoutMs: 5 * 60_000,
+      });
 
       if (!uploadResponse.ok) {
         throw new Error(
@@ -290,7 +296,9 @@ export async function uploadFileToR2(
     });
 
     if (isAbortError(error)) {
-      throw new Error("Upload wurde abgebrochen oder hat das Zeitlimit überschritten.");
+      throw new Error(
+        "Upload wurde abgebrochen oder hat das Zeitlimit überschritten."
+      );
     }
 
     throw error;
