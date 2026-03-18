@@ -5,16 +5,38 @@ import { useRouter } from "next/navigation";
 import {
   ChangeEvent,
   FormEvent,
-  useEffect,
+  ReactNode,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { ImageIcon, Loader2, Plus, Upload, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  FileArchive,
+  ImageIcon,
+  Loader2,
+  PackagePlus,
+  UploadCloud,
+  X,
+} from "lucide-react";
 
 type ReleaseStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
-
 type UploadKind = "image" | "release";
+
+type UploadState = {
+  isUploading: boolean;
+  progress: number;
+  fileName: string | null;
+  uploadedUrl: string | null;
+  error: string | null;
+};
+
+type DirectUploadResponse = {
+  uploadUrl: string;
+  publicUrl: string;
+  key: string;
+};
 
 type StartMultipartResponse = {
   uploadId: string;
@@ -35,32 +57,17 @@ type CompleteMultipartResponse = {
   etag?: string | null;
 };
 
-type DirectUploadResponse = {
-  uploadUrl: string;
-  publicUrl: string;
-  key: string;
-};
-
 type UploadedPart = {
   PartNumber: number;
   ETag: string;
 };
 
-type UploadState = {
-  isUploading: boolean;
-  progress: number;
-  fileName: string | null;
-  uploadedUrl: string | null;
-  error: string | null;
-};
-
-const initialUploadState: UploadState = {
-  isUploading: false,
-  progress: 0,
-  fileName: null,
-  uploadedUrl: null,
-  error: null,
-};
+const IMAGE_UPLOAD_API = "/api/uploads";
+const MULTIPART_START_API = "/api/uploads/multipart/start";
+const MULTIPART_PART_API = "/api/uploads/multipart/part-url";
+const MULTIPART_COMPLETE_API = "/api/uploads/multipart/complete";
+const MULTIPART_ABORT_API = "/api/uploads/multipart/abort";
+const CREATE_RELEASE_API = "/api/admin/releases";
 
 const MAX_IMAGE_UPLOAD_SIZE = 20 * 1024 * 1024; // 20 MB
 const MAX_RELEASE_UPLOAD_SIZE = 30 * 1024 * 1024 * 1024; // 30 GB
@@ -83,14 +90,24 @@ const ALLOWED_RELEASE_TYPES = [
   "application/x-rar-compressed",
 ] as const;
 
+const initialUploadState: UploadState = {
+  isUploading: false,
+  progress: 0,
+  fileName: null,
+  uploadedUrl: null,
+  error: null,
+};
+
 function slugify(value: string) {
-  return value
-    .normalize("NFKD")
-    .replace(/[^\w\s-]+/g, "")
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "general";
+  return (
+    value
+      .normalize("NFKD")
+      .replace(/[^\w\s-]+/g, "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "general"
+  );
 }
 
 function formatBytes(bytes: number) {
@@ -109,16 +126,26 @@ function formatBytes(bytes: number) {
 
 function validateFile(kind: UploadKind, file: File) {
   if (kind === "image") {
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type as (typeof ALLOWED_IMAGE_TYPES)[number])) {
+    if (
+      !ALLOWED_IMAGE_TYPES.includes(
+        file.type as (typeof ALLOWED_IMAGE_TYPES)[number]
+      )
+    ) {
       return "Ungültiger Bildtyp. Erlaubt sind JPG, PNG, WEBP und GIF.";
     }
+
     if (file.size > MAX_IMAGE_UPLOAD_SIZE) {
       return "Bild ist zu groß. Maximal 20 MB erlaubt.";
     }
+
     return null;
   }
 
-  if (!ALLOWED_RELEASE_TYPES.includes(file.type as (typeof ALLOWED_RELEASE_TYPES)[number])) {
+  if (
+    !ALLOWED_RELEASE_TYPES.includes(
+      file.type as (typeof ALLOWED_RELEASE_TYPES)[number]
+    )
+  ) {
     return `Ungültiger Release-Dateityp: ${file.type || "unbekannt"}`;
   }
 
@@ -129,7 +156,10 @@ function validateFile(kind: UploadKind, file: File) {
   return null;
 }
 
-async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+async function fetchJson<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<T> {
   const response = await fetch(input, init);
 
   let data: unknown = null;
@@ -146,7 +176,7 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
       "error" in data &&
       typeof (data as { error?: unknown }).error === "string"
         ? (data as { error: string }).error
-        : "Unbekannter Fehler.";
+        : `Request fehlgeschlagen (${response.status}).`;
 
     throw new Error(error);
   }
@@ -157,10 +187,10 @@ async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promi
 async function fetchWithTimeout(
   input: RequestInfo | URL,
   init: RequestInit = {},
-  timeoutMs = 60_000
+  timeoutMs = 120_000
 ) {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     return await fetch(input, {
@@ -168,7 +198,7 @@ async function fetchWithTimeout(
       signal: controller.signal,
     });
   } finally {
-    window.clearTimeout(timeout);
+    window.clearTimeout(timeoutId);
   }
 }
 
@@ -218,11 +248,137 @@ async function uploadPartWithRetry(params: {
     : new Error("Part-Upload endgültig fehlgeschlagen.");
 }
 
-type NewReleaseFormProps = {
-  createAction?: (formData: FormData) => Promise<void>;
-};
+function fieldClass() {
+  return "w-full rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/20 focus:border-violet-400/50 focus:bg-white/[0.05]";
+}
 
-export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <label className="mb-2 block text-sm font-medium text-white/80">{children}</label>;
+}
+
+function ProgressBar({ progress }: { progress: number }) {
+  return (
+    <div className="mt-3">
+      <div className="mb-2 flex items-center justify-between text-[11px] text-white/45">
+        <span>Upload läuft</span>
+        <span>{progress}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 transition-all duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function UploadCard(props: {
+  title: string;
+  subtitle: string;
+  icon: ReactNode;
+  accent: string;
+  accept: string;
+  file: File | null;
+  state: UploadState;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onReset: () => void;
+}) {
+  const {
+    title,
+    subtitle,
+    icon,
+    accent,
+    accept,
+    file,
+    state,
+    inputRef,
+    onChange,
+    onReset,
+  } = props;
+
+  return (
+    <div className="group relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-white/[0.05] to-white/[0.02] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
+      <div
+        className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${accent} opacity-[0.06]`}
+      />
+
+      <div className="relative">
+        <div className="mb-4 flex items-start gap-3">
+          <div className="rounded-2xl border border-white/10 bg-black/30 p-3 text-white/85">
+            {icon}
+          </div>
+
+          <div>
+            <h3 className="text-base font-semibold text-white">{title}</h3>
+            <p className="mt-1 text-sm text-white/50">{subtitle}</p>
+          </div>
+        </div>
+
+        <div className="rounded-[22px] border border-dashed border-white/12 bg-black/20 p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-violet-500">
+              <UploadCloud className="h-4 w-4" />
+              Datei auswählen
+              <input
+                ref={inputRef}
+                type="file"
+                accept={accept}
+                className="hidden"
+                onChange={onChange}
+              />
+            </label>
+
+            {file ? (
+              <button
+                type="button"
+                onClick={onReset}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.08] hover:text-white"
+              >
+                <X className="h-4 w-4" />
+                Entfernen
+              </button>
+            ) : null}
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-white/85">
+                  {file ? file.name : "Keine Datei ausgewählt"}
+                </p>
+                <p className="mt-1 text-xs text-white/40">
+                  {file ? formatBytes(file.size) : "Noch kein Upload"}
+                </p>
+              </div>
+
+              {state.uploadedUrl ? (
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+              ) : null}
+            </div>
+
+            {state.error ? (
+              <p className="mt-3 text-sm text-rose-400">{state.error}</p>
+            ) : null}
+
+            {state.uploadedUrl ? (
+              <p className="mt-3 break-all text-xs text-emerald-400/90">
+                {state.uploadedUrl}
+              </p>
+            ) : null}
+
+            {(state.isUploading || state.progress > 0) && !state.error ? (
+              <ProgressBar progress={state.progress} />
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function NewReleaseForm() {
   const router = useRouter();
 
   const [title, setTitle] = useState("");
@@ -232,11 +388,12 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
   const [description, setDescription] = useState("");
   const [changelog, setChangelog] = useState("");
 
-  const [imageUpload, setImageUpload] = useState<UploadState>(initialUploadState);
-  const [releaseUpload, setReleaseUpload] = useState<UploadState>(initialUploadState);
-
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [releaseFile, setReleaseFile] = useState<File | null>(null);
+
+  const [imageUpload, setImageUpload] = useState<UploadState>(initialUploadState);
+  const [releaseUpload, setReleaseUpload] =
+    useState<UploadState>(initialUploadState);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -245,15 +402,11 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
   const releaseInputRef = useRef<HTMLInputElement | null>(null);
 
   const effectiveSlug = useMemo(() => slugify(slug || title), [slug, title]);
-
-  useEffect(() => {
-    if (!title && slug) {
-      setSlug("");
-    }
-  }, [title, slug]);
+  const isBusy =
+    isSubmitting || imageUpload.isUploading || releaseUpload.isUploading;
 
   async function uploadImageDirect(file: File, currentSlug: string) {
-    const presign = await fetchJson<DirectUploadResponse>("/api/upload", {
+    const presign = await fetchJson<DirectUploadResponse>(IMAGE_UPLOAD_API, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -266,6 +419,13 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
         slug: currentSlug,
       }),
     });
+
+    setImageUpload((prev) => ({
+      ...prev,
+      isUploading: true,
+      progress: 35,
+      error: null,
+    }));
 
     const uploadResponse = await fetchWithTimeout(
       presign.uploadUrl,
@@ -291,22 +451,28 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
     currentSlug: string,
     onProgress: (progress: number) => void
   ) {
-    const started = await fetchJson<StartMultipartResponse>("/api/upload/multipart", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        folder: "releases",
-        slug: currentSlug,
-        fileName: file.name,
-        fileSize: file.size,
-        contentType: file.type || "application/octet-stream",
-        kind: "release",
-      }),
-    });
+    const started = await fetchJson<StartMultipartResponse>(
+      MULTIPART_START_API,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          folder: "releases",
+          slug: currentSlug,
+          fileName: file.name,
+          fileSize: file.size,
+          contentType: file.type || "application/octet-stream",
+          kind: "release",
+        }),
+      }
+    );
 
-    const partSize = Math.max(started.partSize || 10 * 1024 * 1024, 5 * 1024 * 1024);
+    const partSize = Math.max(
+      started.partSize || 10 * 1024 * 1024,
+      5 * 1024 * 1024
+    );
     const partCount = Math.ceil(file.size / partSize);
     const uploadedParts: UploadedPart[] = [];
     let uploadedBytes = 0;
@@ -318,7 +484,7 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
         const chunk = file.slice(start, end);
 
         const presignedPart = await fetchJson<PresignPartResponse>(
-          "/api/upload/multipart/part",
+          MULTIPART_PART_API,
           {
             method: "POST",
             headers: {
@@ -349,7 +515,7 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
       }
 
       const completed = await fetchJson<CompleteMultipartResponse>(
-        "/api/upload/multipart/complete",
+        MULTIPART_COMPLETE_API,
         {
           method: "POST",
           headers: {
@@ -366,7 +532,7 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
       return completed.publicUrl;
     } catch (error) {
       try {
-        await fetch("/api/upload/multipart/abort", {
+        await fetch(MULTIPART_ABORT_API, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -384,14 +550,16 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
     }
   }
 
-  async function handleImageSelect(event: ChangeEvent<HTMLInputElement>) {
+  function handleImageSelect(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
-    setImageUpload(initialUploadState);
+
     setImageFile(null);
+    setImageUpload(initialUploadState);
 
     if (!file) return;
 
     const error = validateFile("image", file);
+
     if (error) {
       setImageUpload({
         isUploading: false,
@@ -413,14 +581,16 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
     });
   }
 
-  async function handleReleaseSelect(event: ChangeEvent<HTMLInputElement>) {
+  function handleReleaseSelect(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
-    setReleaseUpload(initialUploadState);
+
     setReleaseFile(null);
+    setReleaseUpload(initialUploadState);
 
     if (!file) return;
 
     const error = validateFile("release", file);
+
     if (error) {
       setReleaseUpload({
         isUploading: false,
@@ -440,6 +610,24 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
       uploadedUrl: null,
       error: null,
     });
+  }
+
+  function resetImage() {
+    setImageFile(null);
+    setImageUpload(initialUploadState);
+
+    if (imageInputRef.current) {
+      imageInputRef.current.value = "";
+    }
+  }
+
+  function resetRelease() {
+    setReleaseFile(null);
+    setReleaseUpload(initialUploadState);
+
+    if (releaseInputRef.current) {
+      releaseInputRef.current.value = "";
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -470,20 +658,14 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
       let releaseUrl: string | null = releaseUpload.uploadedUrl;
 
       if (imageFile && !imageUrl) {
-        setImageUpload((prev) => ({
-          ...prev,
-          isUploading: true,
-          progress: 10,
-          error: null,
-        }));
-
-        imageUrl = await uploadImageDirect(imageFile, currentSlug);
+        const url = await uploadImageDirect(imageFile, currentSlug);
+        imageUrl = url;
 
         setImageUpload((prev) => ({
           ...prev,
           isUploading: false,
           progress: 100,
-          uploadedUrl: imageUrl,
+          uploadedUrl: url,
           error: null,
         }));
       }
@@ -496,20 +678,26 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
           error: null,
         }));
 
-        releaseUrl = await uploadReleaseMultipart(releaseFile, currentSlug, (progress) => {
-          setReleaseUpload((prev) => ({
-            ...prev,
-            isUploading: true,
-            progress,
-            error: null,
-          }));
-        });
+        const url = await uploadReleaseMultipart(
+          releaseFile,
+          currentSlug,
+          (progress) => {
+            setReleaseUpload((prev) => ({
+              ...prev,
+              isUploading: true,
+              progress,
+              error: null,
+            }));
+          }
+        );
+
+        releaseUrl = url;
 
         setReleaseUpload((prev) => ({
           ...prev,
           isUploading: false,
           progress: 100,
-          uploadedUrl: releaseUrl,
+          uploadedUrl: url,
           error: null,
         }));
       }
@@ -524,366 +712,208 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
       formData.set("fileUrl", releaseUrl);
       formData.set("imageUrl", imageUrl ?? "");
 
-      if (createAction) {
-        await createAction(formData);
-      } else {
-        const response = await fetch("/api/admin/releases", {
-          method: "POST",
-          body: formData,
-        });
+      const response = await fetch(CREATE_RELEASE_API, {
+        method: "POST",
+        body: formData,
+      });
 
-        let data: unknown = null;
-        try {
-          data = await response.json();
-        } catch {
-          data = null;
-        }
+      let data: unknown = null;
 
-        if (!response.ok) {
-          const message =
-            data &&
-            typeof data === "object" &&
-            "error" in data &&
-            typeof (data as { error?: unknown }).error === "string"
-              ? (data as { error: string }).error
-              : "Release konnte nicht erstellt werden.";
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
 
-          throw new Error(message);
-        }
+      if (!response.ok) {
+        const message =
+          data &&
+          typeof data === "object" &&
+          "error" in data &&
+          typeof (data as { error?: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : "Release konnte nicht erstellt werden.";
+
+        throw new Error(message);
       }
 
       router.push("/dashboard/releases");
       router.refresh();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Upload oder Speichern fehlgeschlagen.";
+        error instanceof Error
+          ? error.message
+          : "Upload oder Speichern fehlgeschlagen.";
 
-      setImageUpload((prev) => ({
-        ...prev,
-        isUploading: false,
-        error: prev.error ?? null,
-      }));
-      setReleaseUpload((prev) => ({
-        ...prev,
-        isUploading: false,
-        error: prev.error ?? null,
-      }));
       setSubmitError(message);
+      setImageUpload((prev) => ({ ...prev, isUploading: false }));
+      setReleaseUpload((prev) => ({ ...prev, isUploading: false }));
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  function resetImage() {
-    setImageFile(null);
-    setImageUpload(initialUploadState);
-    if (imageInputRef.current) {
-      imageInputRef.current.value = "";
-    }
-  }
-
-  function resetRelease() {
-    setReleaseFile(null);
-    setReleaseUpload(initialUploadState);
-    if (releaseInputRef.current) {
-      releaseInputRef.current.value = "";
-    }
-  }
-
-  const isBusy =
-    isSubmitting || imageUpload.isUploading || releaseUpload.isUploading;
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
-      <section className="rounded-3xl border border-white/10 bg-black/40 p-6 shadow-[0_0_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
-              <Plus className="h-3.5 w-3.5" />
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(124,58,237,0.18),transparent_35%),radial-gradient(circle_at_top_right,rgba(34,211,238,0.12),transparent_30%),rgba(7,7,10,0.92)] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)] backdrop-blur-2xl md:p-8">
+        <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-300">
+              <PackagePlus className="h-3.5 w-3.5" />
               Release Verwaltung
             </div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">
+
+            <h1 className="text-3xl font-bold tracking-tight text-white md:text-4xl">
               Neues Release erstellen
             </h1>
-            <p className="mt-2 max-w-2xl text-sm text-white/65">
-              Erstelle ein neues Release und lade direkt die Release-Datei sowie optional ein Vorschaubild hoch.
+
+            <p className="mt-3 text-sm leading-6 text-white/58 md:text-[15px]">
+              Lade deine Release-Datei robust per Multipart hoch, ergänze eine
+              Vorschau und veröffentliche alles in einer sauberen Admin-Oberfläche.
             </p>
           </div>
 
           <Link
             href="/dashboard/releases"
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
+            className="inline-flex items-center gap-2 self-start rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.08] hover:text-white"
           >
-            Zurück zur Übersicht
+            <ArrowLeft className="h-4 w-4" />
+            Zurück
           </Link>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-white/85">
-                Titel
-              </label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="z. B. ArcadiaX"
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-violet-400/50"
-              />
-            </div>
-
+        <div className="mt-8 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-[28px] border border-white/10 bg-black/25 p-5">
             <div className="grid gap-5 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <SectionLabel>Titel</SectionLabel>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="z. B. ArcadiaX"
+                  className={fieldClass()}
+                />
+              </div>
+
               <div>
-                <label className="mb-2 block text-sm font-medium text-white/85">
-                  Slug
-                </label>
+                <SectionLabel>Slug</SectionLabel>
                 <input
                   value={slug}
                   onChange={(e) => setSlug(e.target.value)}
                   placeholder="optional"
-                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-violet-400/50"
+                  className={fieldClass()}
                 />
-                <p className="mt-2 text-xs text-white/45">
-                  Aktueller Slug: <span className="text-violet-300">{effectiveSlug}</span>
+                <p className="mt-2 text-xs text-white/35">
+                  Aktueller Slug:{" "}
+                  <span className="text-violet-300">{effectiveSlug}</span>
                 </p>
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-white/85">
-                  Version
-                </label>
+                <SectionLabel>Version</SectionLabel>
                 <input
                   value={version}
                   onChange={(e) => setVersion(e.target.value)}
                   placeholder="1.0.0"
-                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-violet-400/50"
+                  className={fieldClass()}
+                />
+              </div>
+
+              <div>
+                <SectionLabel>Status</SectionLabel>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as ReleaseStatus)}
+                  className={fieldClass()}
+                >
+                  <option value="DRAFT">DRAFT</option>
+                  <option value="PUBLISHED">PUBLISHED</option>
+                  <option value="ARCHIVED">ARCHIVED</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-white/10 bg-black/25 p-5">
+            <div className="space-y-5">
+              <div>
+                <SectionLabel>Beschreibung</SectionLabel>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={5}
+                  placeholder="Kurze Beschreibung des Releases"
+                  className={`${fieldClass()} resize-none`}
+                />
+              </div>
+
+              <div>
+                <SectionLabel>Changelog</SectionLabel>
+                <textarea
+                  value={changelog}
+                  onChange={(e) => setChangelog(e.target.value)}
+                  rows={5}
+                  placeholder="Was ist neu?"
+                  className={`${fieldClass()} resize-none`}
                 />
               </div>
             </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-white/85">
-                Status
-              </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as ReleaseStatus)}
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition focus:border-violet-400/50"
-              >
-                <option value="DRAFT">DRAFT</option>
-                <option value="PUBLISHED">PUBLISHED</option>
-                <option value="ARCHIVED">ARCHIVED</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-white/85">
-                Beschreibung
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={6}
-                placeholder="Kurze Beschreibung des Releases"
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-violet-400/50"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-white/85">
-                Changelog
-              </label>
-              <textarea
-                value={changelog}
-                onChange={(e) => setChangelog(e.target.value)}
-                rows={6}
-                placeholder="Was ist neu?"
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none transition placeholder:text-white/25 focus:border-violet-400/50"
-              />
-            </div>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/10 p-2 text-cyan-300">
-              <ImageIcon className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-white">Vorschaubild hochladen</h2>
-              <p className="text-sm text-white/50">
-                Optional. JPG, PNG, WEBP, GIF. Maximal 20 MB.
-              </p>
-            </div>
-          </div>
+      <section className="grid gap-6 xl:grid-cols-2">
+        <UploadCard
+          title="Vorschaubild"
+          subtitle="Optional · JPG, PNG, WEBP, GIF · max. 20 MB"
+          icon={<ImageIcon className="h-5 w-5" />}
+          accent="from-cyan-400 via-sky-500 to-transparent"
+          accept=".jpg,.jpeg,.png,.webp,.gif"
+          file={imageFile}
+          state={imageUpload}
+          inputRef={imageInputRef}
+          onChange={handleImageSelect}
+          onReset={resetImage}
+        />
 
-          <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-5">
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500">
-                <Upload className="h-4 w-4" />
-                Datei auswählen
-                <input
-                  ref={imageInputRef}
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.webp,.gif"
-                  className="hidden"
-                  onChange={handleImageSelect}
-                />
-              </label>
-
-              {imageFile ? (
-                <button
-                  type="button"
-                  onClick={resetImage}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
-                >
-                  <XCircle className="h-4 w-4" />
-                  Entfernen
-                </button>
-              ) : null}
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-              <p className="text-sm text-white/85">
-                {imageFile ? imageFile.name : "Keine Datei ausgewählt"}
-              </p>
-              <p className="mt-1 text-xs text-white/45">
-                {imageFile ? formatBytes(imageFile.size) : "Optionaler Upload"}
-              </p>
-
-              {imageUpload.error ? (
-                <p className="mt-3 text-sm text-rose-400">{imageUpload.error}</p>
-              ) : null}
-
-              {imageUpload.uploadedUrl ? (
-                <p className="mt-3 text-sm text-emerald-400 break-all">
-                  Upload erfolgreich: {imageUpload.uploadedUrl}
-                </p>
-              ) : null}
-
-              {imageUpload.isUploading ? (
-                <div className="mt-4">
-                  <div className="mb-2 flex items-center justify-between text-xs text-white/55">
-                    <span>Upload läuft...</span>
-                    <span>{imageUpload.progress}%</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className="h-full rounded-full bg-cyan-400 transition-all"
-                      style={{ width: `${imageUpload.progress}%` }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="rounded-2xl border border-violet-400/15 bg-violet-400/10 p-2 text-violet-300">
-              <Upload className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-white">Release-Datei hochladen</h2>
-              <p className="text-sm text-white/50">
-                Pflichtfeld. ZIP, PDF, 7Z oder RAR. Große Dateien per Multipart.
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-5">
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500">
-                <Upload className="h-4 w-4" />
-                Datei auswählen
-                <input
-                  ref={releaseInputRef}
-                  type="file"
-                  accept=".zip,.pdf,.7z,.rar"
-                  className="hidden"
-                  onChange={handleReleaseSelect}
-                />
-              </label>
-
-              {releaseFile ? (
-                <button
-                  type="button"
-                  onClick={resetRelease}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
-                >
-                  <XCircle className="h-4 w-4" />
-                  Entfernen
-                </button>
-              ) : null}
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-              <p className="text-sm text-white/85">
-                {releaseFile ? releaseFile.name : "Keine Datei ausgewählt"}
-              </p>
-              <p className="mt-1 text-xs text-white/45">
-                {releaseFile ? formatBytes(releaseFile.size) : "Pflicht-Upload"}
-              </p>
-
-              {releaseUpload.error ? (
-                <p className="mt-3 text-sm text-rose-400">{releaseUpload.error}</p>
-              ) : null}
-
-              {releaseUpload.uploadedUrl ? (
-                <p className="mt-3 break-all text-sm text-emerald-400">
-                  Upload erfolgreich: {releaseUpload.uploadedUrl}
-                </p>
-              ) : null}
-
-              {(releaseUpload.isUploading || releaseUpload.progress > 0) && !releaseUpload.error ? (
-                <div className="mt-4">
-                  <div className="mb-2 flex items-center justify-between text-xs text-white/55">
-                    <span>Multipart-Upload läuft...</span>
-                    <span>{releaseUpload.progress}%</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className="h-full rounded-full bg-violet-500 transition-all"
-                      style={{ width: `${releaseUpload.progress}%` }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
+        <UploadCard
+          title="Release-Datei"
+          subtitle="Pflichtfeld · ZIP, PDF, 7Z, RAR · große Dateien via Multipart"
+          icon={<FileArchive className="h-5 w-5" />}
+          accent="from-violet-500 via-fuchsia-500 to-transparent"
+          accept=".zip,.pdf,.7z,.rar"
+          file={releaseFile}
+          state={releaseUpload}
+          inputRef={releaseInputRef}
+          onChange={handleReleaseSelect}
+          onReset={resetRelease}
+        />
       </section>
 
-      <section className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl">
-        <h2 className="text-lg font-semibold text-white">Hinweise</h2>
-        <div className="mt-4 grid gap-3 text-sm text-white/60 md:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-            Bild wird direkt als einzelner Upload gespeichert.
+      <section className="rounded-[28px] border border-white/10 bg-black/30 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">
+            Bild wird separat direkt hochgeladen.
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-            Release-Dateien werden robust per Multipart zu R2 hochgeladen.
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">
+            Release-Dateien laufen stabil über Multipart.
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-            Bei Fehlern wird der Multipart-Upload automatisch abgebrochen.
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">
+            Bei Fehler wird der Upload automatisch abgebrochen.
           </div>
         </div>
 
         {submitError ? (
-          <div className="mt-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
+          <div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
             {submitError}
           </div>
         ) : null}
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             type="submit"
             disabled={isBusy}
-            className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-violet-500 px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(124,58,237,0.35)] transition hover:from-violet-500 hover:to-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isBusy ? (
               <>
@@ -892,7 +922,7 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
               </>
             ) : (
               <>
-                <Plus className="h-4 w-4" />
+                <PackagePlus className="h-4 w-4" />
                 Release erstellen
               </>
             )}
@@ -900,7 +930,7 @@ export default function NewReleaseForm({ createAction }: NewReleaseFormProps) {
 
           <Link
             href="/dashboard/releases"
-            className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
+            className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-medium text-white/75 transition hover:bg-white/[0.08] hover:text-white"
           >
             Abbrechen
           </Link>

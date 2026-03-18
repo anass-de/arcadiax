@@ -42,6 +42,7 @@ export const r2Client = new S3Client({
     accessKeyId,
     secretAccessKey,
   },
+  forcePathStyle: true,
 });
 
 export const R2_BUCKET_NAME_VALUE = bucketName;

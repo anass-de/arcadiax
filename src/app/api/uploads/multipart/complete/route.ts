@@ -12,7 +12,7 @@ type SessionUser = {
 
 type CompletePart = {
   ETag?: string;
-  PartNumber?: number;
+  PartNumber?: number | string;
 };
 
 type CompleteBody = {
@@ -27,10 +27,7 @@ export async function POST(request: Request) {
     const user = session?.user as SessionUser | undefined;
 
     if (!user?.id) {
-      return NextResponse.json(
-        { error: "Nicht eingeloggt." },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Nicht eingeloggt." }, { status: 401 });
     }
 
     if (user.role !== "ADMIN") {
@@ -54,17 +51,11 @@ export async function POST(request: Request) {
     const rawParts = Array.isArray(body.parts) ? body.parts : [];
 
     if (!key) {
-      return NextResponse.json(
-        { error: "Key fehlt." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Key fehlt." }, { status: 400 });
     }
 
     if (!uploadId) {
-      return NextResponse.json(
-        { error: "UploadId fehlt." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "UploadId fehlt." }, { status: 400 });
     }
 
     if (rawParts.length === 0) {
