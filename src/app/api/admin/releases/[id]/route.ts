@@ -371,7 +371,14 @@ export async function DELETE(
     ]);
 
     try {
-      await deleteR2ObjectsFromUrls([release.fileUrl, release.imageUrl]);
+      const urlsToDelete = [release.fileUrl, release.imageUrl].filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0
+      );
+
+      if (urlsToDelete.length > 0) {
+        await deleteR2ObjectsFromUrls(urlsToDelete);
+      }
     } catch (error) {
       console.error("R2 cleanup failed after release delete:", error);
     }
