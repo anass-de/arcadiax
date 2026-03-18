@@ -28,7 +28,13 @@ const accountId = assertEnv(R2_ACCOUNT_ID, "R2_ACCOUNT_ID");
 const accessKeyId = assertEnv(R2_ACCESS_KEY_ID, "R2_ACCESS_KEY_ID");
 const secretAccessKey = assertEnv(R2_SECRET_ACCESS_KEY, "R2_SECRET_ACCESS_KEY");
 const bucketName = assertEnv(R2_BUCKET_NAME, "R2_BUCKET_NAME");
-const publicBaseUrl = assertEnv(R2_PUBLIC_BASE_URL, "R2_PUBLIC_BASE_URL").replace(/\/+$/, "");
+const publicBaseUrl = assertEnv(
+  R2_PUBLIC_BASE_URL,
+  "R2_PUBLIC_BASE_URL"
+).replace(/\/+$/, "");
+
+export const R2_BUCKET = bucketName;
+export const R2_PUBLIC_URL = publicBaseUrl;
 
 export const r2Client = new S3Client({
   region: "auto",
@@ -39,10 +45,9 @@ export const r2Client = new S3Client({
   },
 });
 
-export const R2_BUCKET = bucketName;
-export const R2_PUBLIC_URL = publicBaseUrl;
-
-export function isValidFolder(folder: string): folder is "releases" | "media" | "avatars" {
+export function isValidFolder(
+  folder: string
+): folder is "releases" | "media" | "avatars" {
   return ["releases", "media", "avatars"].includes(folder);
 }
 
@@ -88,6 +93,21 @@ export function getPublicUrl(key: string) {
   return `${R2_PUBLIC_URL}/${key}`;
 }
 
+export function getR2KeyFromUrl(url: string) {
+  const normalizedPublicBaseUrl = R2_PUBLIC_URL.replace(/\/+$/, "");
+  const normalizedUrl = url.trim();
+
+  if (!normalizedUrl.startsWith(normalizedPublicBaseUrl)) {
+    return null;
+  }
+
+  const key = normalizedUrl
+    .slice(normalizedPublicBaseUrl.length)
+    .replace(/^\/+/, "");
+
+  return key || null;
+}
+
 export async function createPresignedUploadUrl(params: {
   key: string;
   contentType: string;
@@ -104,9 +124,9 @@ export async function createPresignedUploadUrl(params: {
   });
 
   return {
+    key: params.key,
     uploadUrl,
     publicUrl: getPublicUrl(params.key),
-    key: params.key,
   };
 }
 
@@ -127,8 +147,8 @@ export async function createMultipartUpload(params: {
   }
 
   return {
-    uploadId: response.UploadId,
     key: params.key,
+    uploadId: response.UploadId,
     publicUrl: getPublicUrl(params.key),
   };
 }
@@ -146,7 +166,7 @@ export async function getMultipartPartUploadUrl(params: {
     PartNumber: params.partNumber,
   });
 
-  return getSignedUrl(r2Client, command, {
+  return await getSignedUrl(r2Client, command, {
     expiresIn: params.expiresIn ?? 60 * 10,
   });
 }
@@ -156,18 +176,20 @@ export async function completeMultipartUpload(params: {
   uploadId: string;
   parts: Array<{ ETag: string; PartNumber: number }>;
 }) {
+  const normalizedParts = params.parts
+    .slice()
+    .sort((a, b) => a.PartNumber - b.PartNumber)
+    .map((part) => ({
+      ETag: part.ETag.replaceAll('"', ""),
+      PartNumber: part.PartNumber,
+    }));
+
   const command = new CompleteMultipartUploadCommand({
     Bucket: R2_BUCKET,
     Key: params.key,
     UploadId: params.uploadId,
     MultipartUpload: {
-      Parts: params.parts
-        .slice()
-        .sort((a, b) => a.PartNumber - b.PartNumber)
-        .map((part) => ({
-          ETag: part.ETag,
-          PartNumber: part.PartNumber,
-        })),
+      Parts: normalizedParts,
     },
   });
 
@@ -193,12 +215,37 @@ export async function abortMultipartUpload(params: {
 }
 
 export async function deleteObjectByKey(key: string) {
+  const normalizedKey = key.trim();
+
+  if (!normalizedKey) {
+    return;
+  }
+
   const command = new DeleteObjectCommand({
     Bucket: R2_BUCKET,
-    Key: key,
+    Key: normalizedKey,
   });
 
   await r2Client.send(command);
+}
+
+export async function deleteR2ObjectsFromUrls(
+  urls: Array<string | null | undefined>
+) {
+  const uniqueKeys = Array.from(
+    new Set(
+      urls
+        .filter((url): url is string => typeof url === "string" && !!url.trim())
+        .map((url) => getR2KeyFromUrl(url))
+        .filter((key): key is string => typeof key === "string" && !!key.trim())
+    )
+  );
+
+  if (!uniqueKeys.length) {
+    return;
+  }
+
+  await Promise.all(uniqueKeys.map((key) => deleteObjectByKey(key)));
 }
 
 export async function createPresignedDownloadUrl(params: {
@@ -210,7 +257,7 @@ export async function createPresignedDownloadUrl(params: {
     Key: params.key,
   });
 
-  return getSignedUrl(r2Client, command, {
+  return await getSignedUrl(r2Client, command, {
     expiresIn: params.expiresIn ?? 60 * 10,
   });
 }
