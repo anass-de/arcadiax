@@ -52,7 +52,10 @@ export async function POST(request: Request) {
     const user = session?.user as SessionUser | undefined;
 
     if (!user?.id) {
-      return NextResponse.json({ error: "Nicht eingeloggt." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Nicht eingeloggt." },
+        { status: 401 }
+      );
     }
 
     if (user.role !== "ADMIN") {
@@ -105,14 +108,20 @@ export async function POST(request: Request) {
     }
 
     if (!fileName) {
-      return NextResponse.json({ error: "Dateiname fehlt." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Dateiname fehlt." },
+        { status: 400 }
+      );
     }
 
     if (!contentType) {
-      return NextResponse.json({ error: "Dateityp fehlt." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Dateityp fehlt." },
+        { status: 400 }
+      );
     }
 
-    if (!ALLOWED_RELEASE_TYPES.includes(contentType)) {
+    if (!(ALLOWED_RELEASE_TYPES as readonly string[]).includes(contentType)) {
       return NextResponse.json(
         { error: `Dateityp nicht erlaubt: ${contentType}` },
         { status: 400 }
