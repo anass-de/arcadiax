@@ -32,10 +32,7 @@ type StartMultipartResponse = {
   key: string;
   publicUrl: string;
   partSize: number;
-  parts: Array<{
-    partNumber: number;
-    uploadUrl: string;
-  }>;
+  totalParts: number;
 };
 
 type StartErrorResponse = {
@@ -47,13 +44,20 @@ type StartResponse =
   | StartMultipartResponse
   | StartErrorResponse;
 
+type PartUrlResponse = {
+  ok?: boolean;
+  uploadUrl?: string;
+  error?: string;
+};
+
 export type UploadResult = {
   uploadedUrl: string;
   key: string;
 };
 
-const MULTIPART_CONCURRENCY = 3;
+const MULTIPART_CONCURRENCY = 2;
 const PART_RETRY_COUNT = 3;
+const PART_TIMEOUT_MS = 60 * 60 * 1000;
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
@@ -140,23 +144,13 @@ function uploadWithXhr(params: {
     xhr.upload.onprogress = (event) => {
       if (!params.onProgressBytes) return;
       if (!event.lengthComputable) return;
-
       params.onProgressBytes(event.loaded, event.total);
     };
 
     xhr.onload = () => resolve(xhr);
-
-    xhr.onerror = () => {
-      reject(new Error("Upload fehlgeschlagen."));
-    };
-
-    xhr.ontimeout = () => {
-      reject(new DOMException("Upload timeout", "AbortError"));
-    };
-
-    xhr.onabort = () => {
-      reject(new DOMException("Upload aborted", "AbortError"));
-    };
+    xhr.onerror = () => reject(new Error("Upload fehlgeschlagen."));
+    xhr.ontimeout = () => reject(new DOMException("Upload timeout", "AbortError"));
+    xhr.onabort = () => reject(new DOMException("Upload aborted", "AbortError"));
 
     const abortHandler = () => xhr.abort();
     params.signal?.addEventListener("abort", abortHandler);
@@ -201,6 +195,34 @@ async function startUpload(options: UploadFileOptions): Promise<StartResponse> {
   }
 
   return data;
+}
+
+async function getPartUploadUrl(payload: {
+  key: string;
+  uploadId: string;
+  partNumber: number;
+  signal?: AbortSignal;
+}) {
+  const response = await fetch("/api/uploads/part-url", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      key: payload.key,
+      uploadId: payload.uploadId,
+      partNumber: payload.partNumber,
+    }),
+    signal: payload.signal,
+  });
+
+  const data = await parseJsonSafe<PartUrlResponse>(response);
+
+  if (!response.ok || !data?.ok || !data.uploadUrl) {
+    throw new Error(data?.error || `Part-URL für Teil ${payload.partNumber} fehlt.`);
+  }
+
+  return data.uploadUrl;
 }
 
 async function completeUpload(payload: {
@@ -259,7 +281,7 @@ async function abortUpload(payload: {
       signal: payload.signal,
     });
   } catch {
-    // ignorieren
+      // ignorieren
   }
 }
 
@@ -277,7 +299,7 @@ async function retry<T>(fn: () => Promise<T>, attempts: number) {
       }
 
       if (attempt < attempts) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+        await new Promise((resolve) => setTimeout(resolve, attempt * 700));
       }
     }
   }
@@ -315,7 +337,7 @@ export async function uploadFileToR2(
         blob: options.file,
         contentType: options.file.type || "application/octet-stream",
         signal: options.signal,
-        timeoutMs: 60_000,
+        timeoutMs: 60 * 60 * 1000,
         onProgressBytes: (loadedBytes) => {
           metrics.setSingleLoaded(loadedBytes);
         },
@@ -342,31 +364,42 @@ export async function uploadFileToR2(
     };
   }
 
-  const { uploadId, key, publicUrl, parts, partSize } = start;
+  const { uploadId, key, publicUrl, partSize, totalParts } = start;
   const completedParts: Array<{ ETag: string; PartNumber: number }> = [];
 
-  const uploadPart = async (part: { partNumber: number; uploadUrl: string }) => {
-    const index = part.partNumber - 1;
+  const uploadPart = async (partNumber: number) => {
+    const index = partNumber - 1;
     const startByte = index * partSize;
     const endByte = Math.min(startByte + partSize, options.file.size);
     const chunk = options.file.slice(startByte, endByte);
 
+    const uploadUrl = await retry(
+      async () =>
+        getPartUploadUrl({
+          key,
+          uploadId,
+          partNumber,
+          signal: options.signal,
+        }),
+      PART_RETRY_COUNT
+    );
+
     const xhr = await retry(
       async () =>
         uploadWithXhr({
-          url: part.uploadUrl,
+          url: uploadUrl,
           blob: chunk,
           signal: options.signal,
-          timeoutMs: 5 * 60_000,
+          timeoutMs: PART_TIMEOUT_MS,
           onProgressBytes: (loadedBytes) => {
-            metrics.setPartLoaded(part.partNumber, loadedBytes);
+            metrics.setPartLoaded(partNumber, loadedBytes);
           },
         }),
       PART_RETRY_COUNT
     );
 
     if (xhr.status < 200 || xhr.status >= 300) {
-      throw new Error(`Part ${part.partNumber} fehlgeschlagen (${xhr.status}).`);
+      throw new Error(`Part ${partNumber} fehlgeschlagen (${xhr.status}).`);
     }
 
     const rawETag =
@@ -375,27 +408,27 @@ export async function uploadFileToR2(
       xhr.getResponseHeader("Etag");
 
     if (!rawETag) {
-      throw new Error(`ETag für Part ${part.partNumber} fehlt.`);
+      throw new Error(`ETag für Part ${partNumber} fehlt.`);
     }
 
     completedParts.push({
       ETag: rawETag.replaceAll('"', ""),
-      PartNumber: part.partNumber,
+      PartNumber: partNumber,
     });
 
-    metrics.setPartLoaded(part.partNumber, chunk.size);
+    metrics.setPartLoaded(partNumber, chunk.size);
   };
 
   try {
-    let cursor = 0;
+    let cursor = 1;
 
     const workers = Array.from({
-      length: Math.min(MULTIPART_CONCURRENCY, parts.length),
+      length: Math.min(MULTIPART_CONCURRENCY, totalParts),
     }).map(async () => {
-      while (cursor < parts.length) {
-        const currentIndex = cursor;
+      while (cursor <= totalParts) {
+        const currentPartNumber = cursor;
         cursor += 1;
-        await uploadPart(parts[currentIndex]);
+        await uploadPart(currentPartNumber);
       }
     });
 

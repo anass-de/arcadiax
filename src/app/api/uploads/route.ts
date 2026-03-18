@@ -6,7 +6,6 @@ import {
   buildR2Key,
   createMultipartUpload,
   createPresignedUploadUrl,
-  getMultipartPartUploadUrl,
   isValidFolder,
 } from "@/lib/r2";
 
@@ -47,17 +46,11 @@ const ALLOWED_RELEASE_TYPES = [
 ] as const;
 
 function parseFileSize(value: UploadBody["fileSize"]) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
+  if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
     const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
+    if (Number.isFinite(parsed)) return parsed;
   }
-
   return NaN;
 }
 
@@ -153,24 +146,6 @@ export async function POST(request: Request) {
       contentType,
     });
 
-    const totalParts = Math.ceil(fileSize / DEFAULT_PART_SIZE);
-
-    const parts = await Promise.all(
-      Array.from({ length: totalParts }, async (_, index) => {
-        const partNumber = index + 1;
-        const uploadUrl = await getMultipartPartUploadUrl({
-          key,
-          uploadId: multipart.uploadId,
-          partNumber,
-        });
-
-        return {
-          partNumber,
-          uploadUrl,
-        };
-      })
-    );
-
     return NextResponse.json({
       ok: true,
       mode: "multipart",
@@ -178,7 +153,7 @@ export async function POST(request: Request) {
       uploadId: multipart.uploadId,
       publicUrl: multipart.publicUrl,
       partSize: DEFAULT_PART_SIZE,
-      parts,
+      totalParts: Math.ceil(fileSize / DEFAULT_PART_SIZE),
     });
   } catch (error) {
     console.error("Uploads route error:", error);

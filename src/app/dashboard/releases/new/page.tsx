@@ -5,7 +5,6 @@ import {
   AlertCircle,
   CheckCircle2,
   FileText,
-  Lightbulb,
   Shield,
 } from "lucide-react";
 
@@ -100,72 +99,21 @@ export default async function NewReleasePage({ searchParams }: PageProps) {
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
-          <div className="mb-6 flex items-center gap-3">
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-              <FileText className="h-5 w-5 text-cyan-300" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-zinc-500">Formular</div>
-              <h2 className="text-2xl font-semibold text-white">
-                Release-Daten eingeben
-              </h2>
-            </div>
+      <section className="w-full rounded-3xl border border-white/10 bg-zinc-950/60 p-6 sm:p-8">
+        <div className="mb-6 flex items-center gap-3">
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <FileText className="h-5 w-5 text-cyan-300" />
           </div>
+          <div>
+            <div className="text-sm font-medium text-zinc-500">Formular</div>
+            <h2 className="text-2xl font-semibold text-white">
+              Release-Daten eingeben
+            </h2>
+          </div>
+        </div>
 
-          <NewReleaseForm />
-        </section>
-
-        <aside className="space-y-6">
-          <section className="rounded-3xl border border-white/10 bg-zinc-950/60 p-6">
-            <div className="mb-6 flex items-center gap-3">
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                <Lightbulb className="h-5 w-5 text-cyan-300" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-zinc-500">
-                  Hinweise
-                </div>
-                <h2 className="text-2xl font-semibold text-white">
-                  Empfehlungen
-                </h2>
-              </div>
-            </div>
-
-            <div className="space-y-5 text-sm leading-7 text-zinc-400">
-              <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-                Verwende einen klaren Titel und eine saubere Versionsnummer,
-                damit das Release später gut lesbar und leicht auffindbar ist.
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-                Nutze einen eindeutigen Slug wie{" "}
-                <span className="font-medium text-white">arcadiax</span>.
-                Wenn du nichts einträgst, wird er automatisch aus dem Titel
-                erzeugt.
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-                Setze den Status auf{" "}
-                <span className="font-medium text-white">PUBLISHED</span>,
-                wenn das Release direkt auf der Website erscheinen soll.
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-                Bilder werden normal hochgeladen. Große Release-Dateien werden
-                per Multipart-Upload verarbeitet und können bis zu{" "}
-                <span className="font-medium text-white">30 GB</span> groß sein.
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-                Nach dem Upload werden nur die Metadaten in der Datenbank
-                gespeichert. Die eigentlichen Dateien liegen im Storage.
-              </div>
-            </div>
-          </section>
-        </aside>
-      </div>
+        <NewReleaseForm />
+      </section>
     </div>
   );
 }
