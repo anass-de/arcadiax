@@ -42,6 +42,16 @@ function sanitizeSlug(value: string) {
   );
 }
 
+function inferUploadKind(params: {
+  folder: "releases" | "media" | "avatars";
+  fileType: string;
+}): "image" | "release" {
+  if (params.folder === "avatars") return "image";
+  if (params.folder === "media") return "image";
+  if (params.fileType.startsWith("image/")) return "image";
+  return "release";
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -131,7 +141,9 @@ export async function POST(request: Request) {
     }
 
     const allowedTypes: readonly string[] =
-      folderRaw === "media" ? ALLOWED_IMAGE_TYPES : ALLOWED_FILE_TYPES;
+      folderRaw === "media" || folderRaw === "avatars"
+        ? ALLOWED_IMAGE_TYPES
+        : ALLOWED_FILE_TYPES;
 
     if (!allowedTypes.includes(fileType)) {
       return NextResponse.json(
@@ -140,20 +152,27 @@ export async function POST(request: Request) {
       );
     }
 
+    const kind = inferUploadKind({
+      folder: folderRaw,
+      fileType,
+    });
+
     const key = buildR2Key({
       folder: folderRaw,
       slug,
       fileName,
+      kind,
+      userId: user.id,
     });
 
     const result = await createPresignedUploadUrl({
       key,
       contentType: fileType,
-      expiresIn: 3600,
     });
 
     console.log("UPLOAD PRESIGN SUCCESS", {
       key,
+      kind,
       fileType,
       folder: folderRaw,
       slug,
