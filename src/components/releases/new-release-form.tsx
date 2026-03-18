@@ -358,7 +358,7 @@ export default function NewReleaseForm() {
             {imageUpload.fileName && (
               <div className="rounded-2xl bg-white/5 px-4 py-3 text-white/80">
                 <div className="font-medium">{imageUpload.fileName}</div>
-                {imageUpload.isUploading && (
+                {(imageUpload.isUploading || imageUpload.progress > 0) && (
                   <div className="mt-2">
                     <div className="h-2 overflow-hidden rounded-full bg-white/10">
                       <div
@@ -425,7 +425,7 @@ export default function NewReleaseForm() {
             {releaseUpload.fileName && (
               <div className="rounded-2xl bg-white/5 px-4 py-3 text-white/80">
                 <div className="font-medium">{releaseUpload.fileName}</div>
-                {releaseUpload.isUploading && (
+                {(releaseUpload.isUploading || releaseUpload.progress > 0) && (
                   <div className="mt-2">
                     <div className="h-2 overflow-hidden rounded-full bg-white/10">
                       <div
@@ -453,7 +453,7 @@ export default function NewReleaseForm() {
               </div>
             )}
 
-            {(releaseUpload.fileName || releaseUpload.uploadedUrl) && (
+            {(releaseUpload.fileName || releaseUpload.uploadedUrl || releaseUpload.isUploading) && (
               <button
                 type="button"
                 onClick={() => resetUpload("release")}

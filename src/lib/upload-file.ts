@@ -56,43 +56,54 @@ async function parseJsonSafe<T>(response: Response): Promise<T | null> {
   }
 }
 
-async function putWithTimeout(
-  url: string,
-  blob: Blob,
-  options?: {
-    contentType?: string;
-    signal?: AbortSignal;
-    timeoutMs?: number;
-  }
-) {
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    options?.timeoutMs ?? 60_000
-  );
+function uploadWithXhr(params: {
+  url: string;
+  blob: Blob;
+  contentType?: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  onProgress?: (progress: number) => void;
+}) {
+  return new Promise<XMLHttpRequest>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", params.url, true);
+    xhr.timeout = params.timeoutMs ?? 60_000;
 
-  const abortHandler = () => controller.abort();
-  options?.signal?.addEventListener("abort", abortHandler);
-
-  try {
-    const headers: HeadersInit = {};
-
-    if (options?.contentType) {
-      headers["Content-Type"] = options.contentType;
+    if (params.contentType) {
+      xhr.setRequestHeader("Content-Type", params.contentType);
     }
 
-    const response = await fetch(url, {
-      method: "PUT",
-      body: blob,
-      headers,
-      signal: controller.signal,
-    });
+    xhr.upload.onprogress = (event) => {
+      if (!params.onProgress) return;
+      if (!event.lengthComputable || event.total <= 0) return;
 
-    return response;
-  } finally {
-    clearTimeout(timeout);
-    options?.signal?.removeEventListener("abort", abortHandler);
-  }
+      const progress = Math.round((event.loaded / event.total) * 100);
+      params.onProgress(progress);
+    };
+
+    xhr.onload = () => resolve(xhr);
+
+    xhr.onerror = () => {
+      reject(new Error("Upload fehlgeschlagen."));
+    };
+
+    xhr.ontimeout = () => {
+      reject(new DOMException("Upload timeout", "AbortError"));
+    };
+
+    xhr.onabort = () => {
+      reject(new DOMException("Upload aborted", "AbortError"));
+    };
+
+    const abortHandler = () => xhr.abort();
+    params.signal?.addEventListener("abort", abortHandler);
+
+    xhr.onloadend = () => {
+      params.signal?.removeEventListener("abort", abortHandler);
+    };
+
+    xhr.send(params.blob);
+  });
 }
 
 async function startUpload(options: UploadFileOptions): Promise<StartResponse> {
@@ -185,7 +196,7 @@ async function abortUpload(payload: {
       signal: payload.signal,
     });
   } catch {
-    // bewusst ignorieren
+    // absichtlich ignorieren
   }
 }
 
@@ -209,13 +220,16 @@ export async function uploadFileToR2(
   }
 
   if (start.mode === "single") {
-    let uploadResponse: Response;
+    let xhr: XMLHttpRequest;
 
     try {
-      uploadResponse = await putWithTimeout(start.uploadUrl, options.file, {
+      xhr = await uploadWithXhr({
+        url: start.uploadUrl,
+        blob: options.file,
         contentType: options.file.type || "application/octet-stream",
         signal: options.signal,
         timeoutMs: 60_000,
+        onProgress: options.onProgress,
       });
     } catch (error) {
       if (isAbortError(error)) {
@@ -227,10 +241,8 @@ export async function uploadFileToR2(
       throw error;
     }
 
-    if (!uploadResponse.ok) {
-      throw new Error(
-        `Single Upload fehlgeschlagen (${uploadResponse.status}).`
-      );
+    if (xhr.status < 200 || xhr.status >= 300) {
+      throw new Error(`Single Upload fehlgeschlagen (${xhr.status}).`);
     }
 
     options.onProgress?.(100);
@@ -251,21 +263,33 @@ export async function uploadFileToR2(
       const endByte = Math.min(startByte + partSize, options.file.size);
       const chunk = options.file.slice(startByte, endByte);
 
-      const uploadResponse = await putWithTimeout(part.uploadUrl, chunk, {
+      const xhr = await uploadWithXhr({
+        url: part.uploadUrl,
+        blob: chunk,
         signal: options.signal,
         timeoutMs: 5 * 60_000,
+        onProgress: (partProgress) => {
+          const completedBytes = startByte;
+          const currentPartBytes = Math.round(
+            ((endByte - startByte) * partProgress) / 100
+          );
+          const totalUploaded = completedBytes + currentPartBytes;
+          const overallProgress = Math.min(
+            100,
+            Math.round((totalUploaded / options.file.size) * 100)
+          );
+          options.onProgress?.(overallProgress);
+        },
       });
 
-      if (!uploadResponse.ok) {
-        throw new Error(
-          `Part ${part.partNumber} fehlgeschlagen (${uploadResponse.status}).`
-        );
+      if (xhr.status < 200 || xhr.status >= 300) {
+        throw new Error(`Part ${part.partNumber} fehlgeschlagen (${xhr.status}).`);
       }
 
       const rawETag =
-        uploadResponse.headers.get("etag") ||
-        uploadResponse.headers.get("ETag") ||
-        uploadResponse.headers.get("Etag");
+        xhr.getResponseHeader("etag") ||
+        xhr.getResponseHeader("ETag") ||
+        xhr.getResponseHeader("Etag");
 
       if (!rawETag) {
         throw new Error(`ETag für Part ${part.partNumber} fehlt.`);
