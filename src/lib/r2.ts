@@ -2,6 +2,7 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  DeleteObjectsCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -27,7 +28,10 @@ const accountId = assertEnv(R2_ACCOUNT_ID, "R2_ACCOUNT_ID");
 const accessKeyId = assertEnv(R2_ACCESS_KEY_ID, "R2_ACCESS_KEY_ID");
 const secretAccessKey = assertEnv(R2_SECRET_ACCESS_KEY, "R2_SECRET_ACCESS_KEY");
 export const bucketName = assertEnv(R2_BUCKET_NAME, "R2_BUCKET_NAME");
-const publicBaseUrl = assertEnv(R2_PUBLIC_BASE_URL, "R2_PUBLIC_BASE_URL").replace(/\/+$/, "");
+const publicBaseUrl = assertEnv(R2_PUBLIC_BASE_URL, "R2_PUBLIC_BASE_URL").replace(
+  /\/+$/,
+  ""
+);
 
 export const r2Client = new S3Client({
   region: "auto",
@@ -103,6 +107,23 @@ export function buildR2Key(params: {
 
 export function getPublicUrlForKey(key: string) {
   return `${publicBaseUrl}/${key}`;
+}
+
+/**
+ * Kompatibilitäts-Helfer für ältere Stellen im Projekt.
+ * Entspricht funktional dem bisherigen createPresignedUploadUrl.
+ */
+export async function createPresignedUploadUrl(params: {
+  key: string;
+  contentType: string;
+}) {
+  const uploadUrl = await createSingleUploadUrl(params);
+
+  return {
+    uploadUrl,
+    publicUrl: getPublicUrlForKey(params.key),
+    key: params.key,
+  };
 }
 
 export async function createSingleUploadUrl(params: {
@@ -198,4 +219,67 @@ export async function abortMultipartUpload(params: {
       UploadId: params.uploadId,
     })
   );
+}
+
+function normalizeKeyFromUrl(urlOrKey: string) {
+  const value = urlOrKey.trim();
+  if (!value) return "";
+
+  if (!/^https?:\/\//i.test(value)) {
+    return value.replace(/^\/+/, "");
+  }
+
+  try {
+    const url = new URL(value);
+    const base = new URL(publicBaseUrl);
+
+    if (url.origin === base.origin) {
+      const basePath = base.pathname.replace(/\/+$/, "");
+      const fullPath = url.pathname;
+
+      if (basePath && fullPath.startsWith(basePath)) {
+        return fullPath.slice(basePath.length).replace(/^\/+/, "");
+      }
+
+      return fullPath.replace(/^\/+/, "");
+    }
+
+    return url.pathname.replace(/^\/+/, "");
+  } catch {
+    return value.replace(/^\/+/, "");
+  }
+}
+
+export async function deleteR2Objects(keys: string[]) {
+  const normalized = Array.from(
+    new Set(
+      keys
+        .map((key) => key.trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (!normalized.length) {
+    return { deleted: 0 };
+  }
+
+  await r2Client.send(
+    new DeleteObjectsCommand({
+      Bucket: bucketName,
+      Delete: {
+        Objects: normalized.map((key) => ({ Key: key })),
+        Quiet: false,
+      },
+    })
+  );
+
+  return { deleted: normalized.length };
+}
+
+export async function deleteR2ObjectsFromUrls(urls: string[]) {
+  const keys = urls
+    .map((url) => normalizeKeyFromUrl(url))
+    .filter(Boolean);
+
+  return deleteR2Objects(keys);
 }
